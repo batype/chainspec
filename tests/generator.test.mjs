@@ -109,6 +109,64 @@ const spec = {
     },
   },
 };
+spec.paths["/v1/api/users/{id}/edit"] = {
+  post: {
+    operationId: "Edit",
+    parameters: [
+      { name: "id", in: "path", required: true, schema: { type: "string" } },
+      {
+        name: "notify",
+        in: "query",
+        required: true,
+        schema: { type: "boolean" },
+      },
+      {
+        name: "X-Version",
+        in: "header",
+        required: true,
+        schema: { type: "string" },
+      },
+    ],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string" },
+              headers: { type: "string" },
+            },
+            required: ["name"],
+          },
+        },
+      },
+    },
+    responses: response({ $ref: "#/components/schemas/User" }),
+  },
+};
+spec.paths["/v1/api/users/ping"] = {
+  post: { operationId: "Ping", responses: response({ type: "string" }) },
+};
+spec.paths["/v1/api/users/draft"] = {
+  post: {
+    operationId: "Draft",
+    requestBody: {
+      required: false,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: { name: { type: "string" } },
+            required: ["name"],
+          },
+        },
+      },
+    },
+    responses: response({ type: "string" }),
+  },
+};
 const project = generateSDK(spec);
 for (const [name, text] of Object.entries(project.files))
   await writeFile(join(dir, name), text);
@@ -145,7 +203,7 @@ const op = project.operations.find(
 const endpoint = (api) => api.main[op.controller][op.name];
 
 test("generated SDK compiles; names, refs, recursive models, directional types and unknown diagnostics", () => {
-  assert.equal(project.operations.length, 5);
+  assert.equal(project.operations.length, 8);
   assert(project.diagnostics.some((d) => d.code === "operation-collision"));
   assert(project.diagnostics.some((d) => d.code === "missing-schema"));
   assert(project.files["types.ts"].includes('readonly "id"'));
@@ -165,7 +223,7 @@ test("type contracts reject missing required args, wrong params/body and respons
   const file = join(dir, "contract.ts");
   await writeFile(
     file,
-    `import {createAPI} from './client.js';\nconst API=createAPI();\n// @ts-expect-error path is required\nAPI.main.users.getUser.request();\n// @ts-expect-error path id must be a string\nAPI.main.users.getUser.request({path:{id:12}});\n// @ts-expect-error name in body is required\nAPI.main.users.create.request({body:{}});\nAPI.main.users.create.request({body:{name:'A'}});\nasync function contract(){const data=await API.main.users.getUser.request({path:{id:'1'}});const n:string=data.name;\n// @ts-expect-error writeOnly password excluded from response\nconst secret=data.password;\n}\n`,
+    `import {createAPI} from './client.js';\nconst API=createAPI();\n// @ts-expect-error path is required\nAPI.main.users.getUser.request();\n// @ts-expect-error path id must be a string\nAPI.main.users.getUser.request({path:{id:12}});\n// @ts-expect-error name in body is required\nAPI.main.users.create.request({}, {});\nAPI.main.users.create.request({}, {name:'A'});\nasync function contract(){const data=await API.main.users.getUser.request({path:{id:'1'}});const n:string=data.name;\n// @ts-expect-error writeOnly password excluded from response\nconst secret=data.password;\n}\n`,
   );
   const result = spawnSync(
     resolve("node_modules/.bin/tsc"),
@@ -260,10 +318,10 @@ test("default Fetch JSON/multipart, HTTP errors, aborts and per-call error handl
   };
   try {
     const API = createAPI();
-    await API.main.users.create.request({ body: { name: "Ada" } });
+    await API.main.users.create.request({}, { name: "Ada" });
     assert.equal(sent.init.body, '{"name":"Ada"}');
     assert.equal(sent.init.headers.get("Content-Type"), "application/json");
-    await API.main.files.upload.request({ body: { file: new Blob(["a"]) } });
+    await API.main.files.upload.request({}, { file: new Blob(["a"]) });
     assert(sent.init.body instanceof FormData);
     assert.equal(sent.init.headers.has("Content-Type"), false);
     let count = 0;
@@ -393,7 +451,7 @@ test("SWR hooks: queries read, disabled query pauses, writes only execute after 
     read = API.main.users.getUser.useRequest(
       enabled ? { path: { id: "one" } } : null,
     );
-    mutation = API.main.users.create.useRequest();
+    mutation = API.main.users.create.useRequest({});
     return React.createElement(
       "span",
       null,
@@ -442,7 +500,7 @@ test("SWR hooks: queries read, disabled query pauses, writes only execute after 
     JSON.stringify({ error: read.error?.message, data: read.data }),
   );
   await act(async () => {
-    await mutation.trigger({ body: { name: "New" } });
+    await mutation.trigger({ name: "New" });
   });
   assert.deepEqual(calls, ["GET", "POST"]);
   await act(async () => root.unmount());
@@ -462,4 +520,194 @@ test("CLI generates only in a new directory and does not overwrite existing outp
   assert.equal(second.status, 1);
   assert(second.stderr.includes("already exists"));
   assert.equal(await readFile(join(out, "client.ts"), "utf8"), before);
+});
+
+test("v2 splits params/body/options and takes required headers from options or async beforeRequest", async () => {
+  const calls = [];
+  const API = createAPI({
+    request: async (ctx) => {
+      calls.push(ctx);
+      return { data: { name: "Ada" }, status: 200, headers: new Headers() };
+    },
+  });
+  const params = { path: { id: "a/b" }, query: { notify: true } },
+    body = { name: "Ada", headers: "body field stays body" };
+  await API.main.users.edit.request(params, body, {
+    headers: new Headers({ "x-version": "2", "X-Test": "option" }),
+  });
+  assert.equal(
+    calls[0].url,
+    "https://example.com/api/v1/api/users/a%2Fb/edit?notify=true",
+  );
+  assert.deepEqual(calls[0].body, body);
+  assert.equal(calls[0].headers.get("X-Version"), "2");
+  assert.equal(calls[0].headers.get("X-Test"), "option");
+  await assert.rejects(
+    API.main.users.edit.request(params, body),
+    /Missing header/,
+  );
+  assert.equal(calls.length, 1);
+  await API.main.users.edit.request(params, body, {
+    beforeRequest: [
+      async (ctx) => {
+        ctx.headers.set("X-Version", "injected");
+      },
+    ],
+  });
+  assert.equal(calls[1].headers.get("X-Version"), "injected");
+  await assert.rejects(
+    API.main.users.create.request({ body: { name: "old-v1" } }),
+    /body is required/,
+  );
+  await API.main.users.draft.request({}, undefined, {
+    headers: { "X-Optional": "yes" },
+  });
+  assert.equal(calls[2].body, undefined);
+  assert.equal(calls[2].headers.get("X-Optional"), "yes");
+  const base = API.main.users.edit.getKey(params, body, {
+    headers: { "X-Version": "2" },
+  });
+  assert.notDeepEqual(
+    base,
+    API.main.users.edit.getKey(
+      params,
+      { name: "Changed" },
+      { headers: { "X-Version": "2" } },
+    ),
+  );
+  assert.notDeepEqual(
+    base,
+    API.main.users.edit.getKey(params, body, { headers: { "X-Version": "3" } }),
+  );
+});
+
+test("v2 types cover split required/optional bodies, flat hook options and typed trigger", async () => {
+  const file = join(dir, "v2-contract.ts");
+  await writeFile(
+    file,
+    `import {createReactAPI} from './react.js';
+const API=createReactAPI();
+const p={path:{id:'42'},query:{notify:true}};
+API.main.users.edit.request(p,{name:'A'},{headers:{'X-Version':'2'}});
+// @ts-expect-error required body missing
+API.main.users.edit.request(p);
+// @ts-expect-error old body envelope removed
+API.main.users.create.request({body:{name:'A'}});
+// @ts-expect-error header must be in options
+API.main.users.getUser.request({path:{id:'1'},headers:{'X-Test':'x'}});
+// @ts-expect-error wrong body type
+API.main.users.edit.request(p,{name:3});
+API.main.users.draft.request({},undefined,{headers:{'X-Test':'ok'}});
+API.main.users.draft.request({}, {name:'optional'});
+// @ts-expect-error empty params must still be an object
+API.main.users.create.request('wrong',{name:'A'});
+function Hooks(){
+ API.main.users.draft.useRequest({}).trigger();
+ // @ts-expect-error options are flat, request.headers is v1
+ API.main.users.getUser.useRequest({path:{id:'1'}},{request:{headers:{'X-Test':'old'}}});
+ const bound=API.main.users.edit.useRequest(p,{name:'A'},{headers:{'X-Version':'2'},swr:{throwOnError:true}});
+ bound.trigger();bound.trigger({name:'B'});
+ // @ts-expect-error override body must match schema
+ bound.trigger({name:3});
+ const deferred=API.main.users.edit.useRequest(p,undefined,{headers:{'X-Version':'2'}});
+ deferred.trigger({name:'A'});
+ // @ts-expect-error no bound body means trigger body is required
+ deferred.trigger();
+ API.main.users.getUser.useRequest({path:{id:'1'}},{headers:{'X-Test':'yes'},enabled:false,swr:{shouldRetryOnError:false}});
+ const noBody=API.main.users.ping.useRequest({}, {headers:{'X-Test':'yes'}});noBody.trigger();
+ return null;
+}
+`,
+  );
+  const result = spawnSync(
+    resolve("node_modules/.bin/tsc"),
+    [
+      "--ignoreConfig",
+      "--noEmit",
+      "--strict",
+      "--skipLibCheck",
+      "--target",
+      "ES2022",
+      "--module",
+      "NodeNext",
+      "--moduleResolution",
+      "NodeNext",
+      file,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test("v2 SWR binds params and body, trigger can override body; no-body mutation stays lazy", async () => {
+  const React = await import("react");
+  const { create, act } = await import("react-test-renderer");
+  const { SWRConfig } = await import("swr");
+  const { createReactAPI } = await import(
+    pathToFileURL(join(output, "react.js"))
+  );
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const calls = [];
+  let bound, deferred, read, ping;
+  const API = createReactAPI({
+    request: async (ctx) => {
+      calls.push(ctx);
+      return { data: { name: "Ada" }, status: 200, headers: new Headers() };
+    },
+  });
+  function View() {
+    bound = API.main.users.edit.useRequest(
+      { path: { id: "1" }, query: { notify: true } },
+      { name: "preset" },
+      { headers: { "X-Version": "bound" } },
+    );
+    deferred = API.main.users.edit.useRequest(
+      { path: { id: "2" }, query: { notify: false } },
+      undefined,
+      { headers: { "X-Version": "deferred" } },
+    );
+    read = API.main.users.getUser.useRequest(
+      { path: { id: "3" } },
+      { headers: { "X-Read": "get" } },
+    );
+    ping = API.main.users.ping.useRequest({}, { headers: { "X-Ping": "yes" } });
+    return React.createElement("span", null, read.data?.name ?? "pending");
+  }
+  let root;
+  await act(async () => {
+    root = create(
+      React.createElement(
+        SWRConfig,
+        { value: { provider: () => new Map(), shouldRetryOnError: false } },
+        React.createElement(View),
+      ),
+    );
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "GET");
+  assert.equal(calls[0].headers.get("X-Read"), "get");
+  await act(async () => {
+    await bound.trigger();
+  });
+  assert.deepEqual(calls[1].body, { name: "preset" });
+  assert(calls[1].url.endsWith("/1/edit?notify=true"));
+  assert.equal(calls[1].headers.get("X-Version"), "bound");
+  await act(async () => {
+    await bound.trigger({ name: "override" });
+  });
+  assert.deepEqual(calls[2].body, { name: "override" });
+  await act(async () => {
+    await deferred.trigger({ name: "deferred" });
+  });
+  assert.deepEqual(calls[3].body, { name: "deferred" });
+  assert(calls[3].url.endsWith("/2/edit?notify=false"));
+  await act(async () => {
+    await ping.trigger();
+  });
+  assert.equal(calls[4].body, undefined);
+  assert.equal(calls[4].headers.get("X-Ping"), "yes");
+  await act(async () => root.unmount());
 });

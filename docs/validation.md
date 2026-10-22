@@ -43,3 +43,15 @@ GitHub Actions排队后在提交7e89e3fdc805cfc54ddbe650e495f7ff5bc03c5a上测�
 npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理后，官方公开元数据返回1.0.0，SHA-1为`7c07588d84cb79e70da01ee578891b51b6b26be3`，与发布包一致。
 
 在项目外使用独立缓存、`--userconfig=/dev/null`、官方registry、ignore-scripts全新安装注册表版本；调用generateSDK检查类型、分组和SWR文件通过，运行安装后的CLI生成不带hooks的SDK成功，版本1.0.0。无运行时第三方依赖。此验证不是本地tarball替代安装。
+
+## 2.0 参数签名变更验证
+
+本次只调整生成类型、runtime/Hook模板、调用预览和迁移说明；文档解析、schema映射、网络适配器协议、视觉样式与存储方式沿用原实现。
+
+- `npm test`：12组通过，包含原有编码/错误/适配器/缓存/CLI回归和三组新增验证。
+- 有body操作使用params/body/options三段，无body使用params/options；body内部即使有headers字段也不被当成options。必填header可以由options.headers（含Headers实例）或异步beforeRequest提供，缺失时拒绝进入适配器。
+- 反向类型检查覆盖旧body信封、错误body、非对象空params、params中的headers、旧options.request.headers、缺少必填body和未绑定body时的空trigger。可选body与undefined占位正向通过。
+- SWR真实组件验证：GET headers在第二参数；写hook渲染不请求，绑定body的trigger()、trigger(newBody)、延迟绑定trigger(body)、无body写操作trigger()都按对应params/options发送。
+- 缓存key同时区分params、body、options.headers；原有实例和身份隔离测试继续通过。
+- `npm run build`通过。生产预览的POST调用和Hook示例按新位置显示，headers在options；实际下载ZIP的manifest为2.0.0，解压后全部源码严格编译通过，控制台无警告/错误。
+- 用户的489操作、422模型重新生成到独立v2目录，源码和更新后的integration.example.tsx严格编译通过。完整客户端在本地stub执行真实login与getOnlineUsers名称，核对独立body、分页及headers，无业务网络请求。v1目录保持原样。

@@ -19,6 +19,30 @@ React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。*
 
 支持Swagger2.0、OpenAPI3.0/3.1 JSON的常见子集，本地引用、递归模型、枚举、组合类型、参数与JSON/平面表单。没有模型的响应使用unknown并提示；不是完整的OpenAPI或JSON Schema实现。远程引用、YAML和Swagger UI HTML需先转换。
 
+## 2.0 调用约定
+
+| 文档声明 | request / useRequest 参数 |
+|---|---|
+| 无请求体 | `(params, options)` |
+| 有请求体 | `(params, body, options)` |
+
+params包含`path/query/cookies`；`headers`统一放在options（标准HeadersInit），与signal、拦截器同级。是否有body取决于OpenAPI声明，而不是只看HTTP方法。没有path/query时用`{}`占位；可选body暂不传时，用`undefined`保留第二个位置。
+
+```ts
+// GET：params + options
+API.main.users.getUser.request({path:{id:'42'}},{headers:{'X-Client':'web'}});
+// POST：params + body + options
+API.main.users.createUser.request({}, {name:'Ada',email:'ada@example.com'}, {headers:{'X-Client':'web'}});
+// React 写hook：绑定body后，在事件里trigger()；也可trigger(newBody)覆盖。
+const bound=API.main.users.createUser.useRequest({}, {name:'Ada',email:'ada@example.com'}, {headers:{'X-Client':'web'}});
+// 或者暂不绑定body，在事件里deferred.trigger(body)。
+const deferred=API.main.users.createUser.useRequest({}, undefined, {headers:{'X-Client':'web'}});
+```
+
+GET/HEAD hook options中的enabled、swr与headers同级；不再使用v1的`options.request.headers`。写hook不自动发送请求，必填body未绑定时，trigger也必须提供body。无body的写操作使用`useRequest(params, options)`及`trigger()`。
+
+这是对v1生成SDK的破坏性变更。迁移步骤见[docs/migration-v2.md](docs/migration-v2.md)。
+
 ## 使用下载的SDK
 
 将sdk文件夹放进TypeScript工程。普通入口不依赖React或SWR：
@@ -49,8 +73,8 @@ function UserView(){
   return <span>{data?.name}</span>;
 }
 function Invite(){
-  const {trigger,isMutating}=API.main.users.createUser.useRequest();
-  return <button disabled={isMutating} onClick={()=>trigger({body:{name:'Ada',email:'ada@example.com'}})}>邀请</button>;
+  const {trigger,isMutating}=API.main.users.createUser.useRequest({}, undefined, {headers:{'X-Client':'web'}});
+  return <button disabled={isMutating} onClick={()=>trigger({name:'Ada',email:'ada@example.com'})}>邀请</button>;
 }
 ```
 

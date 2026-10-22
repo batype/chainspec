@@ -802,7 +802,9 @@ export default function App() {
                 GET / HEAD 接入 useSWR；其他方法接入
                 useSWRMutation。切换身份时，更新 cacheScope。
               </p>
-              <code>const {"{ trigger }"} = API.…useRequest()</code>
+              <code>
+                const {"{ trigger }"} = API.…useRequest(params, body, options)
+              </code>
             </article>
           </div>
         </section>

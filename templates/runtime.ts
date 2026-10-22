@@ -13,6 +13,7 @@ export type Definition = {
   controller: string;
   name: string;
   parameters: Parameter[];
+  hasBody: boolean;
   bodyRequired?: boolean;
   mediaType?: string;
   responseType: "json" | "text" | "blob" | "void" | "auto";
@@ -20,9 +21,7 @@ export type Definition = {
 export type Input = {
   path?: Record<string, unknown>;
   query?: Record<string, unknown>;
-  headers?: Record<string, unknown>;
   cookies?: Record<string, unknown>;
-  body?: unknown;
 };
 export interface RequestContext {
   url: string;
@@ -70,13 +69,39 @@ export interface ClientConfig {
     | string
     | (() => string);
 }
-export type RequestArgs<I> = {} extends I
-  ? [input?: I, options?: RequestOptions]
-  : [input: I, options?: RequestOptions];
-export interface Endpoint<I, R> {
+export type RequestArgs<
+  P,
+  B,
+  H extends boolean,
+  Required extends boolean,
+> = H extends true
+  ? Required extends true
+    ? [params: P, body: B, options?: RequestOptions]
+    : [params: P, body?: B, options?: RequestOptions]
+  : {} extends P
+    ? [params?: P, options?: RequestOptions]
+    : [params: P, options?: RequestOptions];
+export interface Endpoint<
+  P,
+  B,
+  R,
+  H extends boolean = false,
+  Required extends boolean = false,
+> {
   readonly definition: Definition;
-  request(...args: RequestArgs<I>): Promise<R>;
-  getKey(input?: I, options?: RequestOptions): readonly unknown[];
+  request(...args: RequestArgs<P, B, H, Required>): Promise<R>;
+  getKey(...args: RequestArgs<P, B, H, Required>): readonly unknown[];
+}
+/** Body position is fixed by the generated operation contract, never inferred from object keys. */
+export function splitArgs(
+  definition: Definition,
+  args: readonly unknown[],
+): { params: Input; body: unknown; options: RequestOptions } {
+  return {
+    params: (args[0] ?? {}) as Input,
+    body: definition.hasBody ? args[1] : undefined,
+    options: (args[definition.hasBody ? 2 : 1] ?? {}) as RequestOptions,
+  };
 }
 export class ApiError extends Error {
   constructor(
@@ -230,15 +255,15 @@ export function createClient(config: ClientConfig = {}) {
     after = [...(config.afterResponse ?? [])],
     errors = [...(config.onError ?? [])];
   return {
-    endpoint<I, R>(definition: Definition): Endpoint<I, R> {
+    endpoint<P, B, R, H extends boolean, Required extends boolean>(
+      definition: Definition,
+    ): Endpoint<P, B, R, H, Required> {
       const def = Object.freeze({
         ...definition,
         parameters: definition.parameters.map((p) => Object.freeze({ ...p })),
       });
-      async function execute(
-        input: Input = {},
-        options: RequestOptions = {},
-      ): Promise<R> {
+      async function execute(...args: unknown[]): Promise<R> {
+        const { params: input, body, options } = splitArgs(def, args);
         let context: RequestContext | undefined;
         try {
           let path = def.path;
@@ -257,13 +282,10 @@ export function createClient(config: ClientConfig = {}) {
               : config.headers,
           );
           new Headers(options.headers).forEach((v, k) => headers.set(k, v));
-          for (const p of def.parameters.filter((p) => p.in !== "path")) {
-            const bag =
-              p.in === "query"
-                ? input.query
-                : p.in === "header"
-                  ? input.headers
-                  : input.cookies;
+          for (const p of def.parameters.filter(
+            (p) => p.in === "query" || p.in === "cookie",
+          )) {
+            const bag = p.in === "query" ? input.query : input.cookies;
             const value = bag?.[p.name];
             if (p.required && (value === undefined || value === null))
               throw new Error(`Missing ${p.in} parameter: ${p.name}`);
@@ -276,13 +298,6 @@ export function createClient(config: ClientConfig = {}) {
                 p.explode ?? true,
               ))
                 query.append(k, v);
-            else if (p.in === "header")
-              headers.set(
-                p.name,
-                Array.isArray(value)
-                  ? value.map(scalar).join(",")
-                  : scalar(value),
-              );
             else if (config.request)
               headers.append(
                 "Cookie",
@@ -293,20 +308,26 @@ export function createClient(config: ClientConfig = {}) {
                 "Cookie parameters require a custom Node request adapter; browser Fetch cannot set Cookie headers",
               );
           }
-          if (def.bodyRequired && input.body === undefined)
+          if (def.bodyRequired && body === undefined)
             throw new Error("Request body is required");
           const url = `${base.replace(/\/$/, "")}/${path.replace(/^\//, "")}${query.size ? `?${query}` : ""}`;
           context = {
             url,
             method: def.method,
             headers,
-            body: input.body,
+            body,
             mediaType: def.mediaType,
             signal: options.signal,
             operation: def,
           };
           for (const fn of [...before, ...(options.beforeRequest ?? [])])
             context = (await fn(context)) ?? context;
+          for (const p of def.parameters.filter(
+            (p) => p.in === "header" && p.required,
+          )) {
+            if (!context.headers.has(p.name))
+              throw new Error(`Missing header parameter: ${p.name}`);
+          }
           let response = await (config.request ?? defaultRequest)(context);
           if (
             !Number.isInteger(response.status) ||
@@ -331,8 +352,9 @@ export function createClient(config: ClientConfig = {}) {
       }
       return {
         definition: def,
-        request: execute as Endpoint<I, R>["request"],
-        getKey(input?: I, options?: RequestOptions) {
+        request: execute as Endpoint<P, B, R, H, Required>["request"],
+        getKey(...args: RequestArgs<P, B, H, Required>) {
+          const { params, body, options } = splitArgs(def, args);
           const scope =
             typeof config.cacheScope === "function"
               ? config.cacheScope()
@@ -342,7 +364,8 @@ export function createClient(config: ClientConfig = {}) {
             base,
             scope,
             def.id,
-            input ?? {},
+            params,
+            body,
             Array.from(new Headers(options?.headers).entries()),
           ];
         },

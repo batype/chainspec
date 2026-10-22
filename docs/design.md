@@ -9,7 +9,7 @@
 - `API`是创建的客户端实例；`main`是命名空间，可配置为`mian`、`admin`等。每份文档生成一个命名空间。组合多份文档时由业务组合不同实例，不共享认证或缓存。
 - 控制器默认按路径分组，常见`/v1/api`等前缀自动移除。移除只影响命名，不改实际请求路径。支持首个tag分组及显式别名映射；中文tag可以作为JS属性。
 - 方法从operationId转为camelCase，无operationId时从方法/路径生成。分组内重名追加HTTP方法和路径哈希，并记录诊断。建议后端提供稳定、唯一的operationId，否则新增冲突可能使名字变化。
-- `.request(input,options)`返回Promise，input明确区分path/query/headers/cookies/body。没有必填参数时可省略input；参数必填性由类型与基础运行时检查约束。
+- 2.0按是否声明请求体固定签名：无body时`.request(params,options)`；有body时`.request(params,body,options)`。params只包含path/query/cookies，headers放在options；不根据传入对象的字段猜测位置。必填性由类型与基础运行时检查约束。
 - 不把Swagger UI页面URL当作接口基地址。输入必须是JSON正文；基地址来自servers/host或用户配置。相对servers需要与业务部署环境核对。
 
 ## 类型的可信边界
@@ -24,8 +24,8 @@
 
 [官方参数文档](https://swr.vercel.app/docs/arguments)强调缓存key需要包含影响结果的参数，[Mutation文档](https://swr.vercel.app/docs/mutation)提供手动触发写操作。
 
-- GET/HEAD：`.useRequest(input,{enabled,request,swr})`，底层useSWR；null或enabled:false暂停。
-- POST/PUT/PATCH/DELETE等：`.useRequest({request,swr})`与`.useMutation(...)`等价，底层useSWRMutation；只有trigger(input)才发送，不在挂载或焦点变化时自动写入。
+- GET/HEAD：`.useRequest(params,{enabled,headers,signal,swr})`，底层useSWR；null或enabled:false暂停。
+- POST/PUT/PATCH/DELETE等：`.useRequest(params,body,options)`与`.useMutation(...)`等价（无body操作为两段），底层useSWRMutation；只有trigger()或trigger(body)才发送，不在挂载或焦点变化时自动写入。
 - key包含实例ID、基地址、operation、输入、显式请求头和cacheScope。改变同一客户端的身份时必须改变cacheScope（例如tenant:user:authRevision）；别把token放在scope。登出同时清理应用SWR Provider缓存。拦截器动态加的凭据不能自动推断到key中。
 - 客户端在模块级或Provider中稳定创建；SSR按请求隔离。hooks只能在组件/自定义hook顶层无条件调用。写操作后是否刷新哪些查询，由业务调用mutate决定，不猜测关联。
 
