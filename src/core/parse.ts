@@ -21,7 +21,7 @@ const reserved = new Set(["__proto__", "prototype", "constructor", "then"]);
 export function nameOf(value: string, fallback = "endpoint"): string {
   const words = value
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .split(/[^\p{ID_Continue}$]+/u)
+    .split(/[^A-Za-z0-9_$]+/)
     .filter(Boolean);
   let result =
     words
@@ -29,7 +29,7 @@ export function nameOf(value: string, fallback = "endpoint"): string {
         i ? w[0].toUpperCase() + w.slice(1) : w[0].toLowerCase() + w.slice(1),
       )
       .join("") || fallback;
-  if (!/^[\p{ID_Start}_$]/u.test(result)) result = "_" + result;
+  if (!/^[A-Za-z_$]/.test(result)) result = "_" + result;
   return reserved.has(result) ? result + "Api" : result;
 }
 function hash(value: string) {
@@ -68,7 +68,7 @@ export function normalize(
 ) {
   const namespace = options.namespace ?? "main";
   if (
-    !/^[\p{ID_Start}_$][\p{ID_Continue}$]*$/u.test(namespace) ||
+    !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(namespace) ||
     reserved.has(namespace)
   )
     throw new Error("命名空间需是有效标识符，不能使用保留的对象属性");
@@ -90,6 +90,7 @@ export function normalize(
   const operations: Operation[] = [];
   const used = new Set<string>();
   const groupSources = new Map<string, string>();
+  const assignedGroups = new Map<string, string>();
   for (const path of Object.keys(doc.paths).sort()) {
     if (!path.startsWith("/") || path.includes("?") || path.includes("#"))
       throw new Error("paths中的路径需以/开头且不能包含query/hash");
@@ -112,10 +113,19 @@ export function normalize(
       const originalGroup =
         op["x-sdk-controller"] ??
         (options.groupBy === "tag" ? (tags[0] ?? pathGroup) : pathGroup);
-      let controller = nameOf(
-        options.controllerNames?.[originalGroup] ?? originalGroup,
-        "default",
+      const alias = options.controllerNames?.[originalGroup];
+      if (alias !== undefined && !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(alias))
+        throw new Error(`分组「${originalGroup}」的别名需为英文标识符`);
+      let controller = assignedGroups.get(originalGroup) ?? nameOf(
+        alias ?? (/^[\x00-\x7F]+$/.test(originalGroup) ? originalGroup : pathGroup),
+        "group_" + hash(originalGroup),
       );
+      if (!assignedGroups.has(originalGroup) && alias === undefined && /[^\x00-\x7F]/.test(originalGroup))
+        diagnostics.push({
+          level: "warning", code: "group-name-fallback",
+          message: `分组「${originalGroup}」使用路径推导名称 ${controller}；可在 controllerNames 中显式映射`,
+          location: path,
+        });
       if (
         groupSources.has(controller) &&
         groupSources.get(controller) !== originalGroup
@@ -129,11 +139,11 @@ export function normalize(
         });
       }
       groupSources.set(controller, originalGroup);
+      assignedGroups.set(originalGroup, controller);
       const originalId =
         typeof op.operationId === "string" ? op.operationId : undefined;
-      let name = nameOf(
-        originalId ?? method + " " + stripped.replace(/\{([^}]+)\}/g, "by $1"),
-      );
+      const methodSource = method + " " + stripped.replace(/\{([^}]+)\}/g, "by $1");
+      let name = nameOf(originalId && /^[\x00-\x7F]+$/.test(originalId) ? originalId : methodSource);
       if (used.has(`${controller}.${name}`)) {
         name += "_" + method + "_" + hash(path);
         diagnostics.push({

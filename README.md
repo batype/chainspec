@@ -15,7 +15,7 @@ React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。*
 
 ## 一次完整流程
 
-导入或粘贴JSON → 配置命名空间/分组/服务地址 → 生成 → 搜索接口并预览调用、类型与诊断 → 下载完整SDK ZIP。输入与配置改动后，旧结果暂停复制/下载。输入面板可以折叠。支持亮色、暗色、系统主题和手机布局。
+导入文件、粘贴JSON或从URL获取 → 编辑可复用的JSON配置 → 生成 → 搜索接口并预览调用、类型与诊断 → 下载完整SDK ZIP。输入与配置改动后，旧结果暂停复制/下载。输入面板可以折叠。支持亮色、暗色、系统主题和手机布局。
 
 支持Swagger2.0、OpenAPI3.0/3.1 JSON的常见子集，本地引用、递归模型、枚举、组合类型、参数与JSON/平面表单。没有模型的响应使用unknown并提示；不是完整的OpenAPI或JSON Schema实现。远程引用、YAML和Swagger UI HTML需先转换。
 
@@ -111,7 +111,7 @@ npm run dev
 # http://127.0.0.1:4184/chainspec/
 ```
 
-CLI从本地JSON生成一个**新目录**，不会覆盖已有目录：
+CLI支持本地JSON、HTTP(S) JSON链接和配置文件。默认创建新目录；重复生成显式加`--update`，只替换未经修改、无额外文件的CLI生成目录：
 
 ```sh
 npm run build:core
@@ -119,12 +119,60 @@ node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --stri
 # --group-by tag / --base-url URL / --no-hooks
 ```
 
+### 一份 JSON 配置，网页与代码库共用
+
+网页的配置区直接编辑JSON，支持导入/导出，完整SDK ZIP也包含`chainspec.config.json`。配置格式版本`version: 1`与生成器npm版本独立。
+
+```json
+{
+  "version": 1,
+  "input": "https://example.com/api-json",
+  "output": "./src/api",
+  "namespace": "main",
+  "groupBy": "tag",
+  "hooks": true,
+  "controllerNames": {
+    "短信管理": "sms"
+  }
+}
+```
+
+```sh
+npm install -D @batype/chainspec@^2.1.0
+npx chainspec --config chainspec.config.json
+# 接口更新后重新生成：
+npx chainspec --config chainspec.config.json --update
+# 也可直接从链接生成：
+npx chainspec --in https://example.com/api-json --out ./new-sdk
+```
+
+加入你项目的package.json：`"sdk:generate": "chainspec --config chainspec.config.json --update"`，以后执行`npm run sdk:generate`即可。
+
+`input`也可以是`./openapi.json`，在代码库保留对应文件即可。配置文件中的本地input/output路径相对于配置文件；显式CLI参数覆盖JSON，并相对于当前工作目录。还可配置`stripPrefix`、`baseUrl`。未知键及错误类型直接报错，配置文件不执行JavaScript。网页只读取当前导入的JSON，不根据本地路径自动读磁盘；配置中的URL需要点击“获取JSON”。输出目录只用于CLI。
+
+首个Tag保留为分组依据，中文标签仍保留在说明和搜索中。调用链只生成ASCII标识符：显式`controllerNames`优先，未映射的非ASCII分组从路径推导并提示；同一Tag保持同一分组，重名使用稳定后缀。建议为中文Tag显式映射并提交配置，让名字在路径变化后仍保持稳定。2.0已有中文调用名的SDK需重新生成并修改调用；原有英文别名与v2入参约定保持不变。
+
+`--update`通过CLI生成的文件清单和SHA256检查所有生成文件；手改文件、额外文件、符号链接、未由CLI管理的旧目录会拒绝更新。自定义请求与业务代码放在SDK目录外。没有`--update`仍不会覆盖已有目录。
+
+`path`与`query`可以同时存在。例如`/users/{id}/orders?page=1`：
+
+```ts
+API.main.users.listOrders.request({
+  path: { id: '42' },
+  query: { page: 1 }
+}, { headers: { 'X-Client': 'web' } });
+// 如果文档还声明body：request({path, query}, body, options)。
+// useRequest使用同样的位置；具体字段由文档推导。
+```
+
 Node生成器API：
 
 ```ts
-import {generateSDK} from '@batype/chainspec';
+import {generateSDK, parseConfig, fetchDocument} from '@batype/chainspec';
 const project=generateSDK(jsonText,{namespace:'main',groupBy:'path',hooks:true});
 // project.files: 文件名→内容；operations与diagnostics供自定义工具展示
+// const config = parseConfig(configJSON);
+// const remote = generateSDK(await fetchDocument(config.input), config);
 ```
 
 已正式发布到[npm：@batype/chainspec](https://www.npmjs.com/package/@batype/chainspec)，也可下载[GitHub Release tarball](https://github.com/batype/chainspec/releases)。
@@ -138,7 +186,7 @@ npx --yes --package=@batype/chainspec chainspec --in openapi.json --out ./new-sd
 
 ## 数据与安全边界
 
-生产CSP `connect-src 'none'`；Worker只解析本地文档。仅主题持久化，无云历史或遥测。输入最大8MiB、5000操作/模型。清空后移除当前输入和结果。不要未经检查就公开包含业务模型、地址和枚举的生成SDK。仓库、截图和测试使用合成API；用户提供的文档不进入公开源码。
+只有点击获取链接或执行CLI时才GET指定的JSON；浏览器不携带Cookie/认证、不经过代理，目标站需允许CORS，HTTPS页面不能获取HTTP资源。生产CSP仅为URL导入允许HTTP(S)连接；Worker仍只解析文档，不获取外部引用。URL导入有20秒超时及8MiB流式限制，可取消。仅主题持久化，无云历史或遥测。输入最大8MiB、5000操作/模型。清空后移除当前输入和结果。不要未经检查就公开包含业务模型、地址和枚举的生成SDK。仓库、截图和测试使用合成API；用户提供的文档不进入公开源码。
 
 类型不验证服务端数据；不猜鉴权凭据；不保证复杂序列化和所有Schema约束。int64依然是JS number，需要精度时由服务器返回string。参阅[限制](docs/limits.md)。
 

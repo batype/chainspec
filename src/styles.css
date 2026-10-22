@@ -1666,3 +1666,15 @@ summary {
     scroll-behavior: auto;
   }
 }
+
+/* Source URLs and reusable JSON configuration. */
+.url-import { display:flex; gap:8px; padding:0 20px; }
+.url-import input { min-width:0; flex:1; }
+.source-help, .config-help { color:var(--muted); font-size:12px; line-height:1.7; }
+.source-help { padding:0 20px; margin:8px 0 12px; }
+.config-editor { width:100%; min-height:300px; resize:vertical; font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; }
+.config-error { color:var(--danger,#dc4444); font-size:12px; min-height:18px; }
+.config-actions { display:flex; align-items:center; gap:12px; margin:10px 0; }
+.config-help pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.config-help code { display:block; overflow-wrap:anywhere; }
+@media(max-width:640px) { .url-import { padding:0 14px; flex-wrap:wrap; } .url-import input { flex-basis:100%; } .source-help { padding:0 14px; } }

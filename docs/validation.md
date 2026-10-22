@@ -55,3 +55,10 @@ npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理�
 - 缓存key同时区分params、body、options.headers；原有实例和身份隔离测试继续通过。
 - `npm run build`通过。生产预览的POST调用和Hook示例按新位置显示，headers在options；实际下载ZIP的manifest为2.0.0，解压后全部源码严格编译通过，控制台无警告/错误。
 - 用户的489操作、422模型重新生成到独立v2目录，源码和更新后的integration.example.tsx严格编译通过。完整客户端在本地stub执行真实login与getOnlineUsers名称，核对独立body、分页及headers，无业务网络请求。v1目录保持原样。
+
+## 2.1 JSON配置、英文分组和URL导入
+
+- 16组测试通过：新增同一中文Tag多路径单组、ASCII命名/显式别名/稳定重名、配置类型与未知键校验、配置相对路径及flag优先级、CLI更新与手工修改/额外文件/符号链接保护、URL成功/HTML/HTTP错误/长度与流式限额/取消。原有12组v2类型、运行时、SWR与CLI回归继续通过。
+- `npm run build`通过。生产预览实际从用户指定来源读取489个操作，首Tag映射为英文，request/useRequest预览使用Operations body类型。实际SDK ZIP包含version 2.1.0及共用JSON配置，独立生成的489操作/422模型SDK严格TypeScript编译通过；未发送业务接口请求。
+- 浏览器验证无效JSON配置会禁用生成与SDK下载，修复后恢复；配置导出再导入成功。合成接口同时含path/query的预览通过。公开截图使用合成Messaging API。
+- `npm pack`包含19个生成器文件，未包含用户业务文档或SDK。项目外offline/ignore-scripts安装tarball，CLI版本及parseConfig/fetchDocument/generateSDK导出通过。

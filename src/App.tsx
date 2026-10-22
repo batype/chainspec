@@ -5,14 +5,9 @@ import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
 import Code from "./components/Code";
 import { usage } from "./usage";
-const defaults = {
-  namespace: "main",
-  groupBy: "path" as "path" | "tag",
-  stripPrefix: "",
-  baseUrl: "",
-  hooks: true,
-  aliases: "",
-};
+import { DEFAULT_CONFIG, parseConfig } from "./core/config";
+import { fetchDocument } from "./core/source";
+const defaultConfigText = JSON.stringify(DEFAULT_CONFIG, null, 2);
 type Theme = "system" | "light" | "dark";
 type Preview =
   | "usage"
@@ -43,7 +38,9 @@ function readTheme(): Theme {
 }
 export default function App() {
   const [input, setInput] = useState(exampleText),
-    [settings, setSettings] = useState(defaults),
+    [configText, setConfigText] = useState(defaultConfigText),
+    [sourceUrl, setSourceUrl] = useState(""),
+    [loadingUrl, setLoadingUrl] = useState(false),
     [result, setResult] = useState<GeneratedProject | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -59,26 +56,68 @@ export default function App() {
     seq = useRef(0),
     editor = useRef<HTMLTextAreaElement>(null),
     edits = useRef(0),
-    imports = useRef(0);
-  const stateKey = JSON.stringify([input, settings]);
+    imports = useRef(0),
+    remote = useRef<AbortController | null>(null);
+  const parsedConfig = useMemo(() => {
+    try { return { value: parseConfig(configText), error: "" }; }
+    catch (e) { return { value: null, error: e instanceof Error ? e.message : "配置有误" }; }
+  }, [configText]);
+  const settings = parsedConfig.value ?? DEFAULT_CONFIG;
+  useEffect(() => {
+    const source = parsedConfig.value?.input;
+    if (source !== undefined) setSourceUrl(/^https?:\/\//i.test(source) ? source : "");
+  }, [parsedConfig.value?.input]);
+  const stateKey = JSON.stringify([input, configText]);
   const dirty = stateKey !== submitted;
   const ready = Boolean(result) && !dirty && !busy && !error;
   const options = (): GeneratorOptions => {
-    const aliases: Record<string, string> = Object.create(null);
-    for (const line of settings.aliases.split("\n").filter((l) => l.trim())) {
-      const pos = line.indexOf("=");
-      if (pos < 1 || !line.slice(pos + 1).trim())
-        throw new Error("分组别名格式：原分组=新名称，每行一条");
-      aliases[line.slice(0, pos).trim()] = line.slice(pos + 1).trim();
+    const { version, input, output, ...opts } = parseConfig(configText);
+    return opts;
+  };
+  const setSource = (source: string) => setConfigText((previous) => {
+    try { return JSON.stringify({ ...parseConfig(previous), input: source }, null, 2); }
+    catch { return previous; }
+  });
+  const importUrl = async () => {
+    const edit = edits.current, id = ++imports.current;
+    remote.current?.abort();
+    const controller = new AbortController();
+    remote.current = controller;
+    setLoadingUrl(true);
+    setError("");
+    setNotice("");
+    try {
+      const url = sourceUrl.trim();
+      const text = await fetchDocument(url, controller.signal);
+      if (edit !== edits.current || id !== imports.current) return;
+      edits.current++;
+      setInput(text);
+      setSource(url);
+      setInputOpen(true);
+      setNotice("JSON 已从链接读入，点击生成 SDK。来源已写入有效的 JSON 配置。");
+    } catch (e) {
+      if (id !== imports.current || edit !== edits.current) return;
+      setError(e instanceof TypeError
+        ? "无法读取链接：请检查网络、HTTPS 和目标站 CORS；也可下载 JSON 导入，或使用 CLI 获取。"
+        : e instanceof Error ? e.message : "获取失败");
+    } finally {
+      if (id === imports.current) setLoadingUrl(false);
     }
-    return {
-      namespace: settings.namespace,
-      groupBy: settings.groupBy,
-      stripPrefix: settings.stripPrefix || undefined,
-      baseUrl: settings.baseUrl || undefined,
-      hooks: settings.hooks,
-      controllerNames: aliases,
-    };
+  };
+  const exportConfig = () => {
+    try { download(JSON.stringify(parseConfig(configText), null, 2), "chainspec.config.json", "application/json"); }
+    catch (e) { setError(e instanceof Error ? e.message : "配置有误"); }
+  };
+  const importConfig = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      if (file.size > MAX_BYTES) throw new Error("配置最大 8 MiB");
+      const config = parseConfig(await file.text());
+      setConfigText(JSON.stringify(config, null, 2));
+      setSourceUrl(/^https?:\/\//i.test(config.input) ? config.input : "");
+      setNotice("配置已导入；URL 来源请点击获取，本地来源请另行导入 JSON 文件。");
+      setError("");
+    } catch (e) { setError(e instanceof Error ? e.message : "配置有误"); }
   };
   const generate = () => {
     try {
@@ -122,13 +161,13 @@ export default function App() {
     };
     const id = ++seq.current;
     setBusy(true);
-    setSubmitted(JSON.stringify([exampleText, defaults]));
+    setSubmitted(JSON.stringify([exampleText, defaultConfigText]));
     w.postMessage({
       id,
       input: exampleText,
       options: { namespace: "main", groupBy: "path", hooks: true },
     });
-    return () => w.terminate();
+    return () => { w.terminate(); remote.current?.abort(); };
   }, []);
   useEffect(() => {
     const media = matchMedia("(prefers-color-scheme: dark)");
@@ -186,6 +225,10 @@ export default function App() {
     : "";
   const clear = () => {
     edits.current++;
+    imports.current++;
+    remote.current?.abort();
+    setLoadingUrl(false);
+    setSourceUrl("");
     seq.current++;
     setInput("");
     setResult(null);
@@ -203,6 +246,7 @@ export default function App() {
       return;
     edits.current++;
     setInput(exampleText);
+    setSource("./openapi.json");
     setError("");
     setNotice("合成示例已载入，点击生成。");
     setInputOpen(true);
@@ -211,6 +255,8 @@ export default function App() {
     if (!file) return;
     const edit = edits.current,
       id = ++imports.current;
+    remote.current?.abort();
+    setLoadingUrl(false);
     try {
       if (file.size > MAX_BYTES) throw new Error("文件最大8 MiB");
       const text = new TextDecoder("utf-8", { fatal: true }).decode(
@@ -219,6 +265,7 @@ export default function App() {
       if (edit !== edits.current || id !== imports.current) return;
       edits.current++;
       setInput(text);
+      setSource(file.name);
       setError("");
       setNotice("文件已在本地读入，点击生成SDK。");
       setInputOpen(true);
@@ -243,6 +290,7 @@ export default function App() {
         strToU8(text),
       ]),
     );
+    entries["chainspec.config.json"] = strToU8(JSON.stringify(parseConfig(configText), null, 2));
     download(
       zipSync(entries, { level: 6 }).slice().buffer,
       "chainspec-sdk.zip",
@@ -252,8 +300,6 @@ export default function App() {
   };
   const warnings =
     result?.diagnostics.filter((d) => d.level === "warning") ?? [];
-  const update = (key: keyof typeof defaults, value: string | boolean) =>
-    setSettings((s) => ({ ...s, [key]: value }));
   return (
     <>
       <a className="skip" href="#studio">
@@ -365,7 +411,7 @@ export default function App() {
                 type="button"
                 className="primary"
                 onClick={generate}
-                disabled={busy || !input.trim()}
+                disabled={busy || loadingUrl || !input.trim() || Boolean(parsedConfig.error)}
               >
                 {busy ? "正在生成…" : "生成 SDK"} <span>↗</span>
               </button>
@@ -399,6 +445,14 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+                <form className="url-import" onSubmit={(e) => { e.preventDefault(); void importUrl(); }}>
+                  <label className="sr-only" htmlFor="source-url">OpenAPI JSON 链接</label>
+                  <input id="source-url" type="url" placeholder="https://example.com/api-json"
+                    value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required />
+                  <button type="submit" disabled={loadingUrl || !sourceUrl.trim()}>{loadingUrl ? "获取中…" : "获取 JSON"}</button>
+                  {loadingUrl && <button type="button" onClick={() => remote.current?.abort()}>取消</button>}
+                </form>
+                <p className="source-help">只读取你指定的 JSON 链接；需目标站允许 CORS。解析和生成在本地完成。</p>
                 <label htmlFor="spec" className="sr-only">
                   Swagger或OpenAPI JSON
                 </label>
@@ -441,73 +495,22 @@ export default function App() {
                 <h3 id="settings-title">
                   生成配置 <span>CONFIGURATION</span>
                 </h3>
-                <div className="settings-grid">
-                  <label>
-                    命名空间
-                    <input
-                      value={settings.namespace}
-                      onChange={(e) => update("namespace", e.target.value)}
-                      placeholder="main"
-                      spellCheck={false}
-                    />
-                    <small>
-                      API.{settings.namespace || "main"}.controller.method
-                    </small>
-                  </label>
-                  <label>
-                    控制器分组
-                    <select
-                      value={settings.groupBy}
-                      onChange={(e) => update("groupBy", e.target.value)}
-                    >
-                      <option value="path">按路径分组</option>
-                      <option value="tag">按首个 Tag 分组</option>
-                    </select>
-                  </label>
-                  <label>
-                    移除公共路径前缀
-                    <input
-                      value={settings.stripPrefix}
-                      onChange={(e) => update("stripPrefix", e.target.value)}
-                      placeholder="自动识别，如 /v1/api"
-                      spellCheck={false}
-                    />
-                    <small>只影响分组，不改变请求 URL</small>
-                  </label>
-                  <label>
-                    覆盖服务地址
-                    <input
-                      value={settings.baseUrl}
-                      onChange={(e) => update("baseUrl", e.target.value)}
-                      placeholder="使用文档中的 servers"
-                      spellCheck={false}
-                    />
-                  </label>
+                <p className="config-help">网页与 CLI 共用一份 JSON。路径相对于配置文件；中文 Tag 用 controllerNames 映射为英文。</p>
+                <label className="sr-only" htmlFor="config-json">生成配置 JSON</label>
+                <textarea id="config-json" className="config-editor" value={configText}
+                  onChange={(e) => { setConfigText(e.target.value); setError(""); }}
+                  spellCheck={false} autoCapitalize="off" autoComplete="off"
+                  aria-invalid={Boolean(parsedConfig.error)} aria-describedby="config-error" />
+                <p id="config-error" className="config-error" role="alert">{parsedConfig.error}</p>
+                <div className="config-actions">
+                  <label className="import-file">导入配置<input type="file" accept=".json,application/json"
+                    onChange={(e) => { void importConfig(e.target.files?.[0]); e.target.value = ""; }} /></label>
+                  <button type="button" onClick={exportConfig} disabled={Boolean(parsedConfig.error)}>↓ 导出配置</button>
                 </div>
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={settings.hooks}
-                    onChange={(e) => update("hooks", e.target.checked)}
-                  />
-                  <span>
-                    <strong>生成 SWR Hooks</strong>
-                    <small>查询缓存 + 手动触发写请求</small>
-                  </span>
-                  <span className="swr-mark">SWR ↗</span>
-                </label>
-                <details className="aliases">
-                  <summary>自定义分组名称</summary>
-                  <label className="sr-only" htmlFor="aliases">
-                    分组别名，每行原名称等于新名称
-                  </label>
-                  <textarea
-                    id="aliases"
-                    value={settings.aliases}
-                    onChange={(e) => update("aliases", e.target.value)}
-                    placeholder={"users=members\n用户鉴权=auth"}
-                    spellCheck={false}
-                  />
+                <details className="config-help"><summary>查看配置示例与 CLI 命令</summary>
+                  <pre>{JSON.stringify({ version: 1, input: "https://example.com/api-json", output: "./src/api", namespace: "main", groupBy: "tag", hooks: true, controllerNames: { "短信管理": "sms" } }, null, 2)}</pre>
+                  <code>npx --package=@batype/chainspec chainspec --config chainspec.config.json</code>
+                  <p>重复生成加 --update；仅替换未经手工修改的 CLI 生成目录。</p>
                 </details>
               </section>
             </div>

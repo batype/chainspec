@@ -9,4 +9,4 @@
 - Schema支持基础类型、枚举、const、nullable、对象/数组、oneOf/anyOf/allOf及方向性readOnly/writeOnly；只提供编译期类型。未覆盖的条件schema、patternProperties等会提示；discriminator不生成运行时验证器。$ref的3.1兄弟约束、复杂元组、XML、callbacks、webhooks、stream、重试、token刷新和HTTP行为完全等价不在首版保证内。
 - 对JSON数字的解析使用JS标准JSON.parse。int64参数/响应使用number；敏感精度由服务端建模为string。不要把类型生成当成无损JSON工具。
 - SDK运行依赖现代Fetch/Headers/Blob/FormData/URLSearchParams；Node22+或现代浏览器。生成React入口额外需要React及SWR，普通index入口不需要。SWR跨身份隔离还需要调用方正确维护cacheScope和清理缓存。
-- 文件导入本地UTF-8；不自动导入Swagger UI HTML或通过URL抓取。没有登录、遥测、云历史或服务端代理。只持久化主题；清空、刷新、关闭会丢失未下载结果。
+- 文件导入本地UTF-8，显式支持HTTP(S) JSON链接（20秒超时、8MiB流式限制）。浏览器需CORS且不携带Cookie/认证，受混合内容规则限制；无法跨域可用Node CLI获取或下载文件导入。不自动解析Swagger UI HTML。没有登录、遥测、云历史或服务端代理。只持久化主题；清空、刷新、关闭会丢失未下载结果。
