@@ -92,7 +92,7 @@ test("URL loader and installed-style CLI fetch JSON, reject HTML/HTTP/oversize, 
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     assert.equal(JSON.parse(await fetchDocument(base + "/api-json")).openapi, "3.0.3");
-    const result = await run(["--in", base + "/api-json", "--out", "./remote-sdk", "--group-by", "tag"]);
+    const result = await run(["--in", base + "/api-json", "--out", "./remote-sdk", "--group-by", "tag", "--no-translate"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(await readFile(join(dir, "remote-sdk/manifest.json"))).operations.length, 2);
     await assert.rejects(fetchDocument(base + "/bad"), /401/);

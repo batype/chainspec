@@ -5,9 +5,14 @@ import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
 import Code from "./components/Code";
 import { usage } from "./usage";
-import { DEFAULT_CONFIG, parseConfig, type ChainSpecConfig } from "./core/config";
+import { DEFAULT_CONFIG, parseConfig, parseControllerNames, TRANSLATION_DEFAULTS, type ChainSpecConfig } from "./core/config";
 import { fetchDocument } from "./core/source";
-const defaultConfigText = JSON.stringify(DEFAULT_CONFIG, null, 2);
+const namesCacheKey = "chainspec-controller-names-v1";
+function cachedConfig() {
+  try { return { ...DEFAULT_CONFIG, controllerNames: parseControllerNames(JSON.parse(localStorage.getItem(namesCacheKey) ?? "{}")) }; }
+  catch { return DEFAULT_CONFIG; }
+}
+const defaultConfigText = JSON.stringify(cachedConfig(), null, 2);
 type Theme = "system" | "light" | "dark";
 type Preview =
   | "usage"
@@ -41,6 +46,7 @@ export default function App() {
     [configText, setConfigText] = useState(defaultConfigText),
     [sourceUrl, setSourceUrl] = useState(""),
     [loadingUrl, setLoadingUrl] = useState(false),
+    [mappingText, setMappingText] = useState(""),
     [result, setResult] = useState<GeneratedProject | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -58,7 +64,16 @@ export default function App() {
     configDialog = useRef<HTMLDialogElement>(null),
     edits = useRef(0),
     imports = useRef(0),
-    remote = useRef<AbortController | null>(null);
+    remote = useRef<AbortController | null>(null),
+    pendingGeneration = useRef({ id: 0, input: exampleText, configText: defaultConfigText }),
+    currentState = useRef({ input, configText });
+  currentState.current = { input, configText };
+  const cancelGeneration = () => {
+    seq.current++;
+    worker.current?.postMessage({ action: "cancel" });
+    setBusy(false);
+    setNotice("本次生成已取消。");
+  };
   const parsedConfig = useMemo(() => {
     try {
       const value = parseConfig(configText);
@@ -71,10 +86,13 @@ export default function App() {
   // Keep draft field values visible even while validation reports an error.
   const settings = useMemo(() => JSON.parse(configText) as ChainSpecConfig, [configText]);
   const updateConfig = (patch: Partial<ChainSpecConfig>) => {
+    if (busy) cancelGeneration();
     setConfigText((previous) => JSON.stringify({ ...JSON.parse(previous), ...patch }, null, 2));
     setError("");
     setNotice("");
   };
+  const translation = { ...TRANSLATION_DEFAULTS[settings.translation?.provider ?? "mymemory"], ...settings.translation };
+  const updateTranslation = (patch: Partial<typeof translation>) => updateConfig({ translation: { ...translation, ...patch } });
   const mappings = Object.entries(settings.controllerNames ?? {});
   const updateMapping = (index: number, tag: string, name: string) => {
     if (mappings.some(([key], i) => i !== index && key === tag)) {
@@ -82,6 +100,33 @@ export default function App() {
       return;
     }
     updateConfig({ controllerNames: Object.fromEntries(mappings.map((entry, i) => i === index ? [tag, name] : entry)) });
+  };
+  const applyMappingText = () => {
+    try {
+      let value: unknown;
+      if (mappingText.trim().startsWith("{")) {
+        const parsed = JSON.parse(mappingText);
+        value = Object.hasOwn(parsed, "controllerNames") ? parsed.controllerNames : parsed;
+      } else {
+        const entries = mappingText.split("\n").filter(line => line.trim()).map(line => {
+          const pos = line.indexOf("=");
+          if (pos < 1) throw new Error("粘贴 JSON 映射，或每行填写 原分组=英文名称");
+          return [line.slice(0, pos).trim(), line.slice(pos + 1).trim()];
+        });
+        if (new Set(entries.map(([tag]) => tag)).size !== entries.length) throw new Error("粘贴内容有重复分组");
+        value = Object.fromEntries(entries);
+      }
+      const names = parseControllerNames(value);
+      updateConfig({ controllerNames: { ...settings.controllerNames, ...names } });
+      setMappingText("");
+      setNotice(`已合并 ${Object.keys(names).length} 条映射，已有同名分组以粘贴值为准。`);
+    } catch (e) { setError(e instanceof Error ? e.message : "映射格式有误"); }
+  };
+  const copyMappings = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(parseControllerNames(settings.controllerNames ?? {}), null, 2));
+      setNotice("分组映射已复制，可粘贴到其他工程。");
+    } catch { setNotice("复制失败，请手动复制配置中的 controllerNames。"); }
   };
   const copyConfig = async () => {
     try {
@@ -105,6 +150,7 @@ export default function App() {
     catch { return previous; }
   });
   const importUrl = async () => {
+    if (busy) cancelGeneration();
     const edit = edits.current, id = ++imports.current;
     remote.current?.abort();
     const controller = new AbortController();
@@ -136,6 +182,7 @@ export default function App() {
   };
   const importConfig = async (file: File | undefined) => {
     if (!file) return;
+    if (busy) cancelGeneration();
     try {
       if (file.size > MAX_BYTES) throw new Error("配置最大 8 MiB");
       const config = parseConfig(await file.text());
@@ -151,6 +198,7 @@ export default function App() {
       if (new TextEncoder().encode(input).length > MAX_BYTES)
         throw new Error("输入最大8 MiB");
       const id = ++seq.current;
+      pendingGeneration.current = { id, input, configText };
       setBusy(true);
       setError("");
       setNotice("");
@@ -173,8 +221,24 @@ export default function App() {
       id: number;
       result?: GeneratedProject;
       error?: string;
+      progress?: { current: number; total: number };
     }>) => {
       if (data.id !== seq.current) return;
+      if (data.progress) {
+        setNotice(`正在翻译缺失分组 ${data.progress.current} / ${data.progress.total}，已有映射直接复用…`);
+        return;
+      }
+      if (data.result) {
+        const sent = pendingGeneration.current;
+        if (sent.id === data.id && currentState.current.input === sent.input && currentState.current.configText === sent.configText) {
+          const next = JSON.stringify({ ...JSON.parse(sent.configText), controllerNames: data.result.controllerNames }, null, 2);
+          setConfigText(next);
+          setSubmitted(JSON.stringify([sent.input, next]));
+          try { localStorage.setItem(namesCacheKey, JSON.stringify(data.result.controllerNames)); } catch {}
+        }
+        const failed = data.result.diagnostics.some(d => d.code.startsWith("translation-"));
+        setNotice(failed ? "SDK 已生成，部分翻译未成功，已回退路径命名；成功结果已缓存，请查看诊断。" : "SDK 已生成。英文分组映射已缓存，可复制、下载或用于下次生成。");
+      } else setNotice("");
       setBusy(false);
       setError(data.error ?? "");
       setResult(data.result ?? null);
@@ -186,12 +250,13 @@ export default function App() {
       setError("本地生成线程发生错误，请刷新后重试。");
     };
     const id = ++seq.current;
+    pendingGeneration.current = { id, input: exampleText, configText: defaultConfigText };
     setBusy(true);
     setSubmitted(JSON.stringify([exampleText, defaultConfigText]));
     w.postMessage({
       id,
       input: exampleText,
-      options: { namespace: "main", groupBy: "path", hooks: true },
+      options: JSON.parse(defaultConfigText),
     });
     return () => { w.terminate(); remote.current?.abort(); };
   }, []);
@@ -256,6 +321,7 @@ export default function App() {
     setLoadingUrl(false);
     setSourceUrl("");
     seq.current++;
+    worker.current?.postMessage({ action: "cancel" });
     setInput("");
     setResult(null);
     setError("");
@@ -279,6 +345,7 @@ export default function App() {
   };
   const importFile = async (file: File | undefined) => {
     if (!file) return;
+    if (busy) cancelGeneration();
     const edit = edits.current,
       id = ++imports.current;
     remote.current?.abort();
@@ -317,6 +384,7 @@ export default function App() {
       ]),
     );
     entries["chainspec.config.json"] = strToU8(JSON.stringify(parseConfig(configText), null, 2));
+    entries["controller-names.json"] = strToU8(JSON.stringify(result.controllerNames, null, 2));
     download(
       zipSync(entries, { level: 6 }).slice().buffer,
       "chainspec-sdk.zip",
@@ -445,6 +513,7 @@ export default function App() {
               >
                 {inputOpen ? "收起输入 ↑" : "编辑输入 ↓"}
               </button>
+              {busy && <button type="button" onClick={cancelGeneration}>取消生成</button>}
               <button
                 type="button"
                 className="primary"
@@ -500,6 +569,7 @@ export default function App() {
                   value={input}
                   onChange={(e) => {
                     edits.current++;
+                    if (busy) cancelGeneration();
                     setInput(e.target.value);
                     setError("");
                     setNotice("");
@@ -568,9 +638,50 @@ export default function App() {
                   <span><strong>生成 SWR Hooks</strong><small>查询缓存 + 手动触发写请求</small></span>
                   <span className="swr-mark">SWR ↗</span>
                 </label>
-                <details className="mapping-settings">
-                  <summary>分组英文名称 <small>{mappings.length} 条映射</small></summary>
-                  <p className="config-help">例如：短信管理 → sms，生成 API.main.sms。原名称需与文档分组一致。</p>
+                <details className="mapping-settings" open>
+                  <summary>分组英文名称 <small>{mappings.length} 条映射 · {settings.translateNames !== false ? "自动翻译" : "离线命名"}</small></summary>
+                  <label className="translate-toggle">
+                    <input type="checkbox" checked={settings.translateNames !== false}
+                      onChange={(e) => updateConfig({ translateNames: e.target.checked })} />
+                    生成时自动翻译缺失的中文分组
+                  </label>
+                  <div className="translation-settings">
+                    <label htmlFor="translation-provider">翻译服务
+                      <select id="translation-provider" value={translation.provider}
+                        onChange={(e) => {
+                          const provider = e.target.value as typeof translation.provider;
+                          updateConfig({ translation: { ...TRANSLATION_DEFAULTS[provider],
+                            ...(provider !== "mymemory" ? { proxyUrl: translation.proxyUrl ?? "http://127.0.0.1:4190/translate" } : {}) } });
+                        }}>
+                        <option value="mymemory">MyMemory · 免密钥</option>
+                        <option value="youdao">有道智云</option>
+                        <option value="baidu">百度翻译</option>
+                        <option value="google">Google Cloud Translation</option>
+                      </select>
+                    </label>
+                    {translation.provider !== "mymemory" && <>
+                      <div className="settings-grid">
+                        {translation.provider !== "google" && <label htmlFor="translation-app-id">
+                          {translation.provider === "youdao" ? "AppKey 环境变量" : "AppID 环境变量"}
+                          <input id="translation-app-id" value={translation.appIdEnv ?? ""} spellCheck={false}
+                            onChange={(e) => updateTranslation({ appIdEnv: e.target.value })} />
+                        </label>}
+                        <label htmlFor="translation-api-key">{translation.provider === "google" ? "API Key 环境变量" : "应用密钥环境变量"}
+                          <input id="translation-api-key" value={translation.apiKeyEnv ?? ""} spellCheck={false}
+                            onChange={(e) => updateTranslation({ apiKeyEnv: e.target.value })} />
+                        </label>
+                      </div>
+                      <label htmlFor="translation-proxy">网页翻译代理地址
+                        <input id="translation-proxy" value={translation.proxyUrl ?? ""} spellCheck={false}
+                          placeholder="http://127.0.0.1:4190/translate"
+                          onChange={(e) => updateTranslation({ proxyUrl: e.target.value || undefined })} />
+                      </label>
+                      <p className="config-help">将真实密钥填入代码库的 .env；这里填写环境变量名。CLI 可直接翻译；网页使用你自己的代理，密钥留在本机。</p>
+                      <code className="translation-command">npx chainspec translate-server --config chainspec.config.json --origin {location.origin}</code>
+                      <p className="config-help">先导出配置，在其旁边创建 .env 并启动上述命令。浏览器可能需要允许本地网络访问，也可使用自己的 HTTPS 代理。</p>
+                    </>}
+                  </div>
+                  <p className="config-help">仅向所选服务发送缺失的分组名称，不发送接口、模型或请求体。成功映射保存在当前浏览器及下载配置中；已有映射优先复用。</p>
                   <div className="mapping-list">
                     {mappings.map(([tag, name], i) => (
                       <div className="mapping-row" key={i}>
@@ -584,8 +695,20 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-                  <button type="button" className="add-mapping" disabled={mappings.some(([tag]) => !tag)}
-                    onClick={() => updateConfig({ controllerNames: { ...settings.controllerNames, "": "" } })}>＋ 添加映射</button>
+                  <div className="mapping-actions">
+                    <button type="button" className="add-mapping" disabled={mappings.some(([tag]) => !tag)}
+                      onClick={() => updateConfig({ controllerNames: { ...settings.controllerNames, "": "" } })}>＋ 添加映射</button>
+                    <button type="button" disabled={Boolean(parsedConfig.error)} onClick={() => void copyMappings()}>复制映射</button>
+                    <button type="button" onClick={() => {
+                      try { localStorage.removeItem(namesCacheKey); setNotice("浏览器名称缓存已清除，当前配置保留，可继续导出。"); }
+                      catch { setNotice("浏览器未允许清除本地缓存。"); }
+                    }}>清除浏览器缓存</button>
+                  </div>
+                  <details className="paste-mappings"><summary>粘贴已有映射</summary>
+                    <textarea aria-label="粘贴分组英文映射" value={mappingText} onChange={(e) => setMappingText(e.target.value)}
+                      placeholder={'{ "短信管理": "sms" }\n或每行：短信管理=sms'} spellCheck={false} />
+                    <button type="button" disabled={!mappingText.trim()} onClick={applyMappingText}>应用映射</button>
+                  </details>
                 </details>
                 <details className="cli-settings">
                   <summary>CLI 文件配置</summary>

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "input": "./openapi.json",
+  "output": "./src/api",
+  "namespace": "main",
+  "groupBy": "tag",
+  "hooks": true,
+  "translateNames": true,
+  "translation": {
+    "provider": "baidu",
+    "appIdEnv": "BAIDU_TRANSLATE_APP_ID",
+    "apiKeyEnv": "BAIDU_TRANSLATE_SECRET_KEY",
+    "proxyUrl": "http://127.0.0.1:4190/translate"
+  },
+  "controllerNames": {}
+}

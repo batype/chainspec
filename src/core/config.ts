@@ -1,4 +1,4 @@
-import type { GeneratorOptions } from "./model.js";
+import type { GeneratorOptions, TranslationConfig } from "./model.js";
 
 /** Shared by the web editor and CLI. Paths resolve relative to the config file. */
 export type ChainSpecConfig = GeneratorOptions & {
@@ -14,10 +14,12 @@ export const DEFAULT_CONFIG: ChainSpecConfig = {
   groupBy: "path",
   hooks: true,
   controllerNames: {},
+  translateNames: true,
+  translation: { provider: "mymemory" },
 };
 const keys = new Set([
   "version", "input", "output", "namespace", "groupBy", "stripPrefix",
-  "controllerNames", "baseUrl", "hooks",
+  "controllerNames", "baseUrl", "hooks", "translateNames", "translation",
 ]);
 export function parseConfig(input: string | unknown): ChainSpecConfig {
   let value: any = input;
@@ -42,17 +44,57 @@ export function parseConfig(input: string | unknown): ChainSpecConfig {
     throw new Error("groupBy 必须为 path 或 tag");
   if (value.hooks !== undefined && typeof value.hooks !== "boolean")
     throw new Error("hooks 必须为布尔值");
+  if (value.translateNames !== undefined && typeof value.translateNames !== "boolean")
+    throw new Error("translateNames 必须为布尔值");
+  if (value.translation !== undefined) parseTranslationConfig(value.translation);
   if (value.stripPrefix && !value.stripPrefix.startsWith("/"))
     throw new Error("stripPrefix 必须以 / 开头");
   if (value.controllerNames !== undefined) {
-    if (!value.controllerNames || typeof value.controllerNames !== "object" || Array.isArray(value.controllerNames))
-      throw new Error("controllerNames 必须为原分组到英文名称的对象");
-    for (const alias of Object.values(value.controllerNames))
-      if (typeof alias !== "string" || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(alias))
-        throw new Error("controllerNames 的值必须为英文标识符，例如 sms");
+    parseControllerNames(value.controllerNames);
   }
   if (/^[a-z][a-z\d+.-]*:/i.test(value.input)) documentURL(value.input);
   return { ...value, controllerNames: { ...value.controllerNames } };
+}
+
+export const TRANSLATION_DEFAULTS: Record<TranslationConfig["provider"], TranslationConfig> = {
+  mymemory: { provider: "mymemory" },
+  google: { provider: "google", apiKeyEnv: "GOOGLE_TRANSLATE_API_KEY" },
+  baidu: { provider: "baidu", appIdEnv: "BAIDU_TRANSLATE_APP_ID", apiKeyEnv: "BAIDU_TRANSLATE_SECRET_KEY" },
+  youdao: { provider: "youdao", appIdEnv: "YOUDAO_TRANSLATE_APP_KEY", apiKeyEnv: "YOUDAO_TRANSLATE_SECRET_KEY" },
+};
+export function parseTranslationConfig(value: unknown): TranslationConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("translation 必须为对象");
+  const v = value as Record<string, unknown>;
+  for (const key of Object.keys(v))
+    if (!["provider", "apiKeyEnv", "appIdEnv", "proxyUrl"].includes(key))
+      throw new Error("翻译配置仅保存 provider、环境变量名和 proxyUrl；真实密钥请放入环境变量");
+  if (typeof v.provider !== "string" || !Object.hasOwn(TRANSLATION_DEFAULTS, v.provider))
+    throw new Error("翻译服务需为 mymemory、google、baidu 或 youdao");
+  for (const key of ["apiKeyEnv", "appIdEnv"])
+    if (v[key] !== undefined && (typeof v[key] !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(v[key] as string)))
+      throw new Error(`${key} 需为环境变量名称`);
+  if (v.proxyUrl !== undefined) {
+    if (typeof v.proxyUrl !== "string") throw new Error("proxyUrl 需为 HTTP(S) 地址");
+    documentURL(v.proxyUrl);
+  }
+  return { ...TRANSLATION_DEFAULTS[v.provider as TranslationConfig["provider"]], ...v } as TranslationConfig;
+}
+
+export function parseControllerNames(input: unknown): Record<string, string> {
+  if (typeof input === "string") {
+    if (new TextEncoder().encode(input).length > 8 * 1024 * 1024) throw new Error("映射文件最大 8 MiB");
+    try { input = JSON.parse(input); } catch { throw new Error("分组映射必须是有效 JSON 对象"); }
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new Error("controllerNames 必须为原分组到英文名称的对象");
+  const entries = Object.entries(input);
+  if (entries.length > 5000) throw new Error("最多 5000 条分组映射");
+  for (const [tag, alias] of entries) {
+    if (!tag.trim()) throw new Error("请填写映射的原分组名称");
+    if (typeof alias !== "string" || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(alias))
+      throw new Error("controllerNames 的值必须为英文标识符，例如 sms");
+  }
+  return Object.fromEntries(entries);
 }
 
 export function documentURL(input: string): URL {

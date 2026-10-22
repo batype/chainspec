@@ -113,7 +113,8 @@ export function normalize(
       const originalGroup =
         op["x-sdk-controller"] ??
         (options.groupBy === "tag" ? (tags[0] ?? pathGroup) : pathGroup);
-      const alias = options.controllerNames?.[originalGroup];
+      const alias = Object.hasOwn(options.controllerNames ?? {}, originalGroup)
+        ? options.controllerNames![originalGroup] : undefined;
       if (alias !== undefined && !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(alias))
         throw new Error(`分组「${originalGroup}」的别名需为英文标识符`);
       let controller = assignedGroups.get(originalGroup) ?? nameOf(
@@ -356,6 +357,7 @@ export function normalize(
         method: method.toUpperCase(),
         path,
         controller,
+        originalController: originalGroup,
         name,
         originalId,
         tags,

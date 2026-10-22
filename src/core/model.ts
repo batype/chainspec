@@ -12,6 +12,15 @@ export type GeneratorOptions = {
   controllerNames?: Record<string, string>;
   baseUrl?: string;
   hooks?: boolean;
+  translateNames?: boolean;
+  translation?: TranslationConfig;
+};
+export type TranslationConfig = {
+  provider: "mymemory" | "google" | "baidu" | "youdao";
+  apiKeyEnv?: string;
+  appIdEnv?: string;
+  /** Browser-only proxy; CLI talks directly to the configured official provider. */
+  proxyUrl?: string;
 };
 export type Parameter = {
   name: string;
@@ -26,6 +35,7 @@ export type Operation = {
   method: string;
   path: string;
   controller: string;
+  originalController: string;
   name: string;
   originalId?: string;
   tags: string[];
@@ -47,6 +57,7 @@ export type GeneratedProject = {
   schemaCount: number;
   diagnostics: Diagnostic[];
   files: Record<string, string>;
+  controllerNames: Record<string, string>;
 };
 export const MAX_BYTES = 8 * 1024 * 1024;
 export const MAX_OPERATIONS = 5000;

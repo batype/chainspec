@@ -1702,3 +1702,19 @@ summary {
 .config-json-preview { padding:18px; margin:0; max-height:52dvh; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--editor); white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace; }
 .config-dialog-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
 @media(max-width:640px) { .config-dialog { padding:18px; } }
+
+.translate-toggle { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:12px; cursor:pointer; }
+.translate-toggle input { accent-color:var(--accent); }
+.mapping-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+.mapping-actions .add-mapping { margin:0; }
+.mapping-actions button, .paste-mappings button { font-size:11px; }
+.paste-mappings { margin-top:12px; font-size:12px; }
+.paste-mappings summary { cursor:pointer; }
+.paste-mappings textarea { display:block; width:100%; min-height:95px; resize:vertical; margin:10px 0; font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; }
+
+.translation-settings { display:grid; gap:12px; margin-top:14px; padding:14px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }
+.translation-settings > label { display:flex; flex-direction:column; gap:8px; font-size:11px; }
+.translation-settings input, .translation-settings select { min-width:0; width:100%; font-size:11px; }
+.translation-settings .settings-grid { margin-top:0; }
+.translation-settings .config-help { margin:0; }
+.translation-command { display:block; padding:10px; border:1px solid var(--line); border-radius:5px; background:var(--editor); font:11px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }

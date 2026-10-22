@@ -44,3 +44,11 @@
 ## 2.1 配置与重复生成
 
 网页与CLI共用纯JSON的version:1配置，包含input/output及生成选项；核心parseConfig做结构校验。CLI支持--config、直接URL及--update，配置相对路径以配置文件位置为基准，显式flag优先。更新只允许具有清单、所有文件散列一致且没有额外内容的生成目录；先写临时目录再替换，失败回滚。不修改SDK请求运行时和SWR入参约定。
+
+## 2.2 可配置翻译与持久映射
+
+同步生成器保持离线；generateSDKAsync先从实际分组提取缺失中文名称，按缓存/显式映射优先复用，再调用所选服务。Worker负责网页异步翻译、进度与取消。输出controller-names.json只保存有效映射；成功的重名后缀也固化，失败的路径回退不缓存。
+
+服务配置仅含provider、apiKeyEnv、appIdEnv及网页proxyUrl；Node适配器从环境变量读取真实凭据并执行有道/百度签名或Google v2 API Key调用。CLI和本地代理可读取.env。网页不接收和存储真实密钥；付费服务通过用户本地或自建代理，免密钥服务可直接调用。代理只绑定loopback并限定origin、POST JSON和名称大小。
+
+CLI成功生成后原子写回未被并发修改的配置；重复生成可从配置和原SDK缓存复用。网页名称缓存持久化于localStorage并附带下载，支持粘贴/复制JSON或等号分隔映射。接口文档、模型和请求体不发送到翻译服务。
