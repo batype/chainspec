@@ -103,7 +103,14 @@ const project=generateSDK(jsonText,{namespace:'main',groupBy:'path',hooks:true})
 // project.files: 文件名→内容；operations与diagnostics供自定义工具展示
 ```
 
-npm正式可用状态以官方注册表为准；未发布时可使用源码或[GitHub Release tarball](https://github.com/batype/chainspec/releases)。生成器npm入口不需要React、SWR或ZIP依赖。生成SDK自身的React入口才需要SWR。
+已正式发布到[npm：@batype/chainspec](https://www.npmjs.com/package/@batype/chainspec)，也可下载[GitHub Release tarball](https://github.com/batype/chainspec/releases)。
+
+```sh
+npm install -D @batype/chainspec
+npx --yes --package=@batype/chainspec chainspec --in openapi.json --out ./new-sdk --namespace main
+```
+
+生成器npm入口不需要React、SWR或ZIP依赖。生成SDK自身的React入口才需要SWR。
 
 ## 数据与安全边界
 

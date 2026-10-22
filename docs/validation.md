@@ -34,4 +34,12 @@ Vite生产预览，桌面1280×960、手机390×844，亮/暗主题无页面横�
 
 ## npm打包
 
-`npm pack`检查15个文件，不包含业务文档、测试私有生成物或本机配置。在项目外以offline/ignore-scripts安装tarball，调用generateSDK成功、安装后CLI版本为1.0.0。生成器包无运行时第三方依赖。注册表正式发布状态另行核实，不把tarball验证当作npm已发布。
+`npm pack`检查15个文件，不包含业务文档、测试私有生成物或本机配置。在项目外以offline/ignore-scripts安装tarball，调用generateSDK成功、安装后CLI版本为1.0.0。生成器包无运行时第三方依赖。正式注册表验证见下文。
+
+## 公开发布验证
+
+GitHub Actions排队后在提交7e89e3fdc805cfc54ddbe650e495f7ff5bc03c5a上测试及Pages部署成功。公开站点实际加载并生成6个合成操作，切换SWR调用示例及折叠输入正常，控制台无warning/error。
+
+npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理后，官方公开元数据返回1.0.0，SHA-1为`7c07588d84cb79e70da01ee578891b51b6b26be3`，与发布包一致。
+
+在项目外使用独立缓存、`--userconfig=/dev/null`、官方registry、ignore-scripts全新安装注册表版本；调用generateSDK检查类型、分组和SWR文件通过，运行安装后的CLI生成不带hooks的SDK成功，版本1.0.0。无运行时第三方依赖。此验证不是本地tarball替代安装。
