@@ -1,0 +1,67 @@
+{
+  "name": "@batype/chainspec",
+  "version": "1.0.0",
+  "description": "Generate typed chainable TypeScript SDKs and SWR hooks from OpenAPI JSON, locally.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.14"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/core/index.d.ts",
+      "import": "./lib/core/index.js"
+    }
+  },
+  "bin": {
+    "chainspec": "bin/chainspec.mjs"
+  },
+  "files": [
+    "lib/core/",
+    "bin/",
+    "README.md",
+    "LICENSE",
+    "THIRD-PARTY-LICENSES.txt"
+  ],
+  "scripts": {
+    "templates": "node scripts/embed-templates.mjs",
+    "predev": "npm run templates",
+    "dev": "vite --host 127.0.0.1 --port 4184 --strictPort",
+    "build:core": "npm run templates && tsc -p tsconfig.core.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build:core && node --test tests/*.test.mjs",
+    "build": "npm run templates && npm run typecheck && npm run build:core && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4185 --strictPort",
+    "prepack": "npm run build:core"
+  },
+  "devDependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.5",
+    "typescript": "7.0.2",
+    "swr": "2.5.1",
+    "react-test-renderer": "19.3.1",
+    "@types/react-test-renderer": "19.1.0",
+    "fflate": "0.8.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/batype/chainspec.git"
+  },
+  "homepage": "https://batype.github.io/chainspec/",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "keywords": [
+    "openapi",
+    "swagger",
+    "sdk",
+    "typescript",
+    "swr",
+    "codegen"
+  ]
+}

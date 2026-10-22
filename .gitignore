@@ -1,0 +1,10 @@
+node_modules/
+lib/
+dist/
+src/core/templates.ts
+*.tgz
+*.log
+.env*
+.DS_Store
+
+.verify-*/
