@@ -15,7 +15,7 @@ React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。*
 
 ## 一次完整流程
 
-导入文件、粘贴JSON或从URL获取 → 编辑可复用的JSON配置 → 生成 → 搜索接口并预览调用、类型与诊断 → 下载完整SDK ZIP。输入与配置改动后，旧结果暂停复制/下载。输入面板可以折叠。支持亮色、暗色、系统主题和手机布局。
+导入文件、粘贴JSON或从URL获取 → 填写配置表单 → 生成 → 搜索接口并预览调用、类型与诊断 → 下载完整SDK ZIP。输入与配置改动后，旧结果暂停复制/下载。输入面板可以折叠。支持亮色、暗色、系统主题和手机布局。
 
 支持Swagger2.0、OpenAPI3.0/3.1 JSON的常见子集，本地引用、递归模型、枚举、组合类型、参数与JSON/平面表单。没有模型的响应使用unknown并提示；不是完整的OpenAPI或JSON Schema实现。远程引用、YAML和Swagger UI HTML需先转换。
 
@@ -121,7 +121,7 @@ node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --stri
 
 ### 一份 JSON 配置，网页与代码库共用
 
-网页的配置区直接编辑JSON，支持导入/导出，完整SDK ZIP也包含`chainspec.config.json`。配置格式版本`version: 1`与生成器npm版本独立。
+网页的配置区使用表单填写，点击旁边“查看配置”可预览、复制JSON；支持配置导入/导出，导入后回填表单。完整SDK ZIP也包含`chainspec.config.json`。配置格式版本`version: 1`与生成器npm版本独立。
 
 ```json
 {

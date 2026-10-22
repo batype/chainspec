@@ -62,3 +62,9 @@ npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理�
 - `npm run build`通过。生产预览实际从用户指定来源读取489个操作，首Tag映射为英文，request/useRequest预览使用Operations body类型。实际SDK ZIP包含version 2.1.0及共用JSON配置，独立生成的489操作/422模型SDK严格TypeScript编译通过；未发送业务接口请求。
 - 浏览器验证无效JSON配置会禁用生成与SDK下载，修复后恢复；配置导出再导入成功。合成接口同时含path/query的预览通过。公开截图使用合成Messaging API。
 - `npm pack`包含19个生成器文件，未包含用户业务文档或SDK。项目外offline/ignore-scripts安装tarball，CLI版本及parseConfig/fetchDocument/generateSDK导出通过。
+
+## 配置表单与JSON预览
+
+- 默认使用命名空间/分组/路径前缀/服务地址/SWR表单，映射支持逐行添加与删除；CLI输入输出路径保留在折叠选项中。查看配置使用原生dialog，支持Esc关闭并恢复按钮焦点。
+- 浏览器验证表单值与JSON预览、导出文件及SDK生成一致；导入配置回填表单，省略hooks时默认开启且React入口可见。非法命名空间保留原输入并禁用生成。复制JSON、映射添加/删除、弹窗关闭均通过，控制台无错误。
+- `npm test` 16组通过，`npm run build`与`git diff --check`通过。首轮本地HTTP测试因未开放监听权限失败，授予本地网络权限后完整复测通过。核心生成器、CLI与npm版本保持2.1.0。

@@ -1678,3 +1678,27 @@ summary {
 .config-help pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 .config-help code { display:block; overflow-wrap:anywhere; }
 @media(max-width:640px) { .url-import { padding:0 14px; flex-wrap:wrap; } .url-import input { flex-basis:100%; } .source-help { padding:0 14px; } }
+
+.settings-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.settings-heading h3 { flex:1; }
+.settings-heading h3 > span { display:none; }
+.view-config { color:var(--accent); background:var(--accent-soft); font-size:11px; white-space:nowrap; }
+.mapping-settings, .cli-settings { margin-top:17px; font-size:12px; }
+.mapping-settings summary, .cli-settings summary { cursor:pointer; color:var(--ink); }
+.mapping-settings summary small { color:var(--muted); margin-left:8px; font-size:10px; }
+.mapping-list { max-height:220px; overflow:auto; }
+.mapping-row { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto; align-items:center; gap:7px; margin:8px 0; }
+.mapping-row input { width:100%; min-width:0; font-size:11px; }
+.mapping-row > span { color:var(--muted); }
+.mapping-row button { padding:6px 9px; }
+.add-mapping { margin-top:8px; font-size:11px; }
+.cli-settings .settings-grid { margin-top:14px; }
+.config-dialog { width:min(620px,calc(100vw - 32px)); max-height:85dvh; padding:24px; border:1px solid var(--line); border-radius:14px; background:var(--panel); color:var(--ink); box-shadow:0 24px 80px #0003; }
+.config-dialog::backdrop { background:#10182880; }
+.config-dialog-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.config-dialog-heading h2 { font-size:18px; margin:0 0 6px; }
+.config-dialog-heading p { margin:0 0 18px; color:var(--muted); font-size:12px; }
+.config-dialog-heading > button { padding:3px 10px; font-size:22px; }
+.config-json-preview { padding:18px; margin:0; max-height:52dvh; overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--editor); white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.config-dialog-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; }
+@media(max-width:640px) { .config-dialog { padding:18px; } }

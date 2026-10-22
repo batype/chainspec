@@ -5,7 +5,7 @@ import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
 import Code from "./components/Code";
 import { usage } from "./usage";
-import { DEFAULT_CONFIG, parseConfig } from "./core/config";
+import { DEFAULT_CONFIG, parseConfig, type ChainSpecConfig } from "./core/config";
 import { fetchDocument } from "./core/source";
 const defaultConfigText = JSON.stringify(DEFAULT_CONFIG, null, 2);
 type Theme = "system" | "light" | "dark";
@@ -55,14 +55,40 @@ export default function App() {
   const worker = useRef<Worker | null>(null),
     seq = useRef(0),
     editor = useRef<HTMLTextAreaElement>(null),
+    configDialog = useRef<HTMLDialogElement>(null),
     edits = useRef(0),
     imports = useRef(0),
     remote = useRef<AbortController | null>(null);
   const parsedConfig = useMemo(() => {
-    try { return { value: parseConfig(configText), error: "" }; }
+    try {
+      const value = parseConfig(configText);
+      if (Object.keys(value.controllerNames ?? {}).some((tag) => !tag.trim()))
+        throw new Error("请填写映射的原分组名称");
+      return { value, error: "" };
+    }
     catch (e) { return { value: null, error: e instanceof Error ? e.message : "配置有误" }; }
   }, [configText]);
-  const settings = parsedConfig.value ?? DEFAULT_CONFIG;
+  // Keep draft field values visible even while validation reports an error.
+  const settings = useMemo(() => JSON.parse(configText) as ChainSpecConfig, [configText]);
+  const updateConfig = (patch: Partial<ChainSpecConfig>) => {
+    setConfigText((previous) => JSON.stringify({ ...JSON.parse(previous), ...patch }, null, 2));
+    setError("");
+    setNotice("");
+  };
+  const mappings = Object.entries(settings.controllerNames ?? {});
+  const updateMapping = (index: number, tag: string, name: string) => {
+    if (mappings.some(([key], i) => i !== index && key === tag)) {
+      setError("原分组名称重复，请为每个 Tag 只配置一条映射。");
+      return;
+    }
+    updateConfig({ controllerNames: Object.fromEntries(mappings.map((entry, i) => i === index ? [tag, name] : entry)) });
+  };
+  const copyConfig = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(parseConfig(configText), null, 2));
+      setNotice("JSON 配置已复制，可用于 CLI。");
+    } catch { setNotice("复制失败，请导出配置文件或手动复制。"); }
+  };
   useEffect(() => {
     const source = parsedConfig.value?.input;
     if (source !== undefined) setSourceUrl(/^https?:\/\//i.test(source) ? source : "");
@@ -218,7 +244,7 @@ export default function App() {
   }, [filtered]);
   const code = result
     ? preview === "usage" && op
-      ? usage(result, op, settings.hooks ? mode : "request")
+      ? usage(result, op, settings.hooks !== false ? mode : "request")
       : preview === "diagnostics"
         ? JSON.stringify(result.diagnostics, null, 2)
         : (result.files[preview] ?? "此入口已关闭；开启 SWR 后重新生成。")
@@ -340,6 +366,18 @@ export default function App() {
           <option value="dark">暗色模式</option>
         </select>
       </header>
+      <dialog ref={configDialog} className="config-dialog" aria-labelledby="config-dialog-title">
+        <div className="config-dialog-heading">
+          <div><h2 id="config-dialog-title">JSON 配置</h2><p>与当前表单同步，可用于网页或 CLI。</p></div>
+          <button type="button" onClick={() => configDialog.current?.close()} aria-label="关闭配置">×</button>
+        </div>
+        <pre className="config-json-preview" tabIndex={0} aria-label="当前 JSON 配置">{configText}</pre>
+        {parsedConfig.error && <p className="config-error">{parsedConfig.error}</p>}
+        <div className="config-dialog-actions">
+          <button type="button" onClick={() => void copyConfig()} disabled={Boolean(parsedConfig.error)}>复制 JSON</button>
+          <button type="button" className="primary" onClick={exportConfig} disabled={Boolean(parsedConfig.error)}>↓ 导出配置</button>
+        </div>
+      </dialog>
       <main id="top">
         <section className="hero">
           <div>
@@ -492,23 +530,85 @@ export default function App() {
                 className="settings-panel"
                 aria-labelledby="settings-title"
               >
-                <h3 id="settings-title">
-                  生成配置 <span>CONFIGURATION</span>
-                </h3>
-                <p className="config-help">网页与 CLI 共用一份 JSON。路径相对于配置文件；中文 Tag 用 controllerNames 映射为英文。</p>
-                <label className="sr-only" htmlFor="config-json">生成配置 JSON</label>
-                <textarea id="config-json" className="config-editor" value={configText}
-                  onChange={(e) => { setConfigText(e.target.value); setError(""); }}
-                  spellCheck={false} autoCapitalize="off" autoComplete="off"
-                  aria-invalid={Boolean(parsedConfig.error)} aria-describedby="config-error" />
+                <div className="settings-heading">
+                  <h3 id="settings-title">生成配置 <span>CONFIGURATION</span></h3>
+                  <button type="button" className="view-config" aria-haspopup="dialog"
+                    onClick={() => configDialog.current?.showModal()}>查看配置</button>
+                </div>
+                <p className="config-help">填写对应选项；同一份配置可导出给 CLI 使用。</p>
+                <div className="settings-grid">
+                  <label htmlFor="config-namespace">命名空间
+                    <input id="config-namespace" value={settings.namespace ?? "main"} spellCheck={false}
+                      onChange={(e) => updateConfig({ namespace: e.target.value })} placeholder="main" />
+                    <small>API.{settings.namespace || "main"}.controller.method</small>
+                  </label>
+                  <label htmlFor="config-group">控制器分组
+                    <select id="config-group" value={settings.groupBy ?? "path"}
+                      onChange={(e) => updateConfig({ groupBy: e.target.value as "path" | "tag" })}>
+                      <option value="path">按路径分组</option><option value="tag">按首个 Tag 分组</option>
+                    </select>
+                    <small>中文 Tag 可在下方映射为英文</small>
+                  </label>
+                  <label htmlFor="config-prefix">移除公共路径前缀
+                    <input id="config-prefix" value={settings.stripPrefix ?? ""} spellCheck={false}
+                      onChange={(e) => updateConfig({ stripPrefix: e.target.value || undefined })}
+                      placeholder="自动识别，如 /v1/api" />
+                    <small>只影响分组，不改变请求 URL</small>
+                  </label>
+                  <label htmlFor="config-base">覆盖服务地址
+                    <input id="config-base" value={settings.baseUrl ?? ""} spellCheck={false}
+                      onChange={(e) => updateConfig({ baseUrl: e.target.value || undefined })}
+                      placeholder="使用文档中的 servers" />
+                    <small>留空则使用文档默认地址</small>
+                  </label>
+                </div>
+                <label className="check">
+                  <input type="checkbox" checked={settings.hooks !== false}
+                    onChange={(e) => updateConfig({ hooks: e.target.checked })} />
+                  <span><strong>生成 SWR Hooks</strong><small>查询缓存 + 手动触发写请求</small></span>
+                  <span className="swr-mark">SWR ↗</span>
+                </label>
+                <details className="mapping-settings">
+                  <summary>分组英文名称 <small>{mappings.length} 条映射</small></summary>
+                  <p className="config-help">例如：短信管理 → sms，生成 API.main.sms。原名称需与文档分组一致。</p>
+                  <div className="mapping-list">
+                    {mappings.map(([tag, name], i) => (
+                      <div className="mapping-row" key={i}>
+                        <input aria-label={`原分组 ${i + 1}`} placeholder="短信管理" value={tag}
+                          onChange={(e) => updateMapping(i, e.target.value, name)} />
+                        <span aria-hidden="true">→</span>
+                        <input aria-label={`英文名称 ${i + 1}`} placeholder="sms" value={name} spellCheck={false}
+                          onChange={(e) => updateMapping(i, tag, e.target.value)} />
+                        <button type="button" aria-label={`删除映射 ${i + 1}`}
+                          onClick={() => updateConfig({ controllerNames: Object.fromEntries(mappings.filter((_, index) => index !== i)) })}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" className="add-mapping" disabled={mappings.some(([tag]) => !tag)}
+                    onClick={() => updateConfig({ controllerNames: { ...settings.controllerNames, "": "" } })}>＋ 添加映射</button>
+                </details>
+                <details className="cli-settings">
+                  <summary>CLI 文件配置</summary>
+                  <div className="settings-grid">
+                    <label htmlFor="config-source">文档来源
+                      <input id="config-source" value={settings.input} spellCheck={false}
+                        onChange={(e) => updateConfig({ input: e.target.value })} placeholder="./openapi.json 或 JSON 链接" />
+                      <small>网页获取链接请使用左侧“获取 JSON”</small>
+                    </label>
+                    <label htmlFor="config-output">SDK 输出目录
+                      <input id="config-output" value={settings.output} spellCheck={false}
+                        onChange={(e) => updateConfig({ output: e.target.value })} placeholder="./src/api" />
+                      <small>CLI 路径相对于配置文件</small>
+                    </label>
+                  </div>
+                </details>
                 <p id="config-error" className="config-error" role="alert">{parsedConfig.error}</p>
                 <div className="config-actions">
                   <label className="import-file">导入配置<input type="file" accept=".json,application/json"
                     onChange={(e) => { void importConfig(e.target.files?.[0]); e.target.value = ""; }} /></label>
                   <button type="button" onClick={exportConfig} disabled={Boolean(parsedConfig.error)}>↓ 导出配置</button>
                 </div>
-                <details className="config-help"><summary>查看配置示例与 CLI 命令</summary>
-                  <pre>{JSON.stringify({ version: 1, input: "https://example.com/api-json", output: "./src/api", namespace: "main", groupBy: "tag", hooks: true, controllerNames: { "短信管理": "sms" } }, null, 2)}</pre>
+                <details className="config-help"><summary>查看 CLI 使用方式</summary>
                   <code>npx --package=@batype/chainspec chainspec --config chainspec.config.json</code>
                   <p>重复生成加 --update；仅替换未经手工修改的 CLI 生成目录。</p>
                 </details>
@@ -633,7 +733,7 @@ export default function App() {
                         "usage",
                         "types.ts",
                         "client.ts",
-                        ...(settings.hooks ? ["react.ts"] : []),
+                        ...(settings.hooks !== false ? ["react.ts"] : []),
                         "runtime.ts",
                         "diagnostics",
                       ] as Preview[]
@@ -662,7 +762,7 @@ export default function App() {
                         <code>{op.path}</code>
                         <span>{op.deprecated ? "已废弃" : op.summary}</span>
                       </div>
-                      {settings.hooks && (
+                      {settings.hooks !== false && (
                         <div
                           className="mode-switch"
                           role="group"
