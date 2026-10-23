@@ -119,6 +119,36 @@ endpoint.request({});
     { encoding: "utf8" },
   );
   assert.equal(buildNode.status, 0, buildNode.stdout + buildNode.stderr);
+  await writeFile(
+    join(isolated, "node-consumer.ts"),
+    `import {createAPI} from './dist/node.js';
+const API=createAPI({headers:{'X-User':'node'}});
+const user:Promise<{id:string;name:string}>=API.main.users.getUser.request({path:{id:'42'}},{headers:new Headers({'X-Test':'yes'})});
+`,
+  );
+  const nodeTypes = spawnSync(
+    resolve("node_modules/.bin/tsc"),
+    [
+      "--ignoreConfig",
+      "--strict",
+      "--noEmit",
+      "--target",
+      "ES2022",
+      "--module",
+      "NodeNext",
+      "--moduleResolution",
+      "NodeNext",
+      "--lib",
+      "ES2022",
+      "--types",
+      "node",
+      "--typeRoots",
+      resolve("node_modules/@types"),
+      join(isolated, "node-consumer.ts"),
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(nodeTypes.status, 0, nodeTypes.stdout + nodeTypes.stderr);
   const compiledNode = await import(
     pathToFileURL(join(isolated, "dist/node.js"))
   );

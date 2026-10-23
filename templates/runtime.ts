@@ -1,4 +1,6 @@
 /** ChainSpec runtime. Generated SDK types describe the spec, not runtime validation. */
+/** Use the host Fetch types, including Node's undici types without DOM globals. */
+export type HeadersInit = NonNullable<NonNullable<Parameters<typeof globalThis.fetch>[1]>["headers"]>;
 export type Parameter = {
   name: string;
   in: "path" | "query" | "header" | "cookie";
