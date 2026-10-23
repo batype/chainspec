@@ -19,7 +19,7 @@ React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。*
 
 支持Swagger2.0、OpenAPI3.0/3.1 JSON的常见子集，本地引用、递归模型、枚举、组合类型、参数与JSON/平面表单。没有模型的响应使用unknown并提示；不是完整的OpenAPI或JSON Schema实现。远程引用、YAML和Swagger UI HTML需先转换。
 
-## 2.0 调用约定
+## 参数约定（v2 / v3）
 
 | 文档声明 | request / useRequest 参数 |
 |---|---|
@@ -33,13 +33,13 @@ params包含`path/query/cookies`；`headers`统一放在options（标准HeadersI
 API.main.users.getUser.request({path:{id:'42'}},{headers:{'X-Client':'web'}});
 // POST：params + body + options
 API.main.users.createUser.request({}, {name:'Ada',email:'ada@example.com'}, {headers:{'X-Client':'web'}});
-// React 写hook：绑定body后，在事件里trigger()；也可trigger(newBody)覆盖。
+// v3：useRequest 默认自动请求，trigger()/refresh() 可再次请求。
 const bound=API.main.users.createUser.useRequest({}, {name:'Ada',email:'ada@example.com'}, {headers:{'X-Client':'web'}});
-// 或者暂不绑定body，在事件里deferred.trigger(body)。
-const deferred=API.main.users.createUser.useRequest({}, undefined, {headers:{'X-Client':'web'}});
+// 关闭自动请求、暂不绑定body；在事件里deferred.trigger(body)。
+const deferred=API.main.users.createUser.useRequest({}, undefined, {enabled:false,headers:{'X-Client':'web'}});
 ```
 
-GET/HEAD hook options中的enabled、swr与headers同级；不再使用v1的`options.request.headers`。写hook不自动发送请求，必填body未绑定时，trigger也必须提供body。无body的写操作使用`useRequest(params, options)`及`trigger()`。
+所有 useRequest 的 enabled、swr 与 headers 同级；不使用 v1 的 `options.request.headers`。v3 的所有 HTTP 方法默认自动请求；无 body 的操作使用 `useRequest(params, options)`，有 body 使用三段入参。必填 body 延迟提供时必须设置 enabled:false，首次 trigger 必须传 body。
 
 这是对v1生成SDK的破坏性变更。迁移步骤见[docs/migration-v2.md](docs/migration-v2.md)。
 
@@ -73,12 +73,48 @@ function UserView(){
   return <span>{data?.name}</span>;
 }
 function Invite(){
-  const {trigger,isMutating}=API.main.users.createUser.useRequest({}, undefined, {headers:{'X-Client':'web'}});
+  const {trigger,isMutating}=API.main.users.createUser.useRequest({}, undefined, {enabled:false,headers:{'X-Client':'web'}});
   return <button disabled={isMutating} onClick={()=>trigger({name:'Ada',email:'ada@example.com'})}>邀请</button>;
 }
 ```
 
-上述tenantId/userId/authRevision/getAccessToken由你的应用提供。GET/HEAD使用useSWR；其他方法的useRequest（也可用useMutation）返回trigger，挂载时不发送写操作。null输入或enabled:false暂停查询。切换身份时更新cacheScope并清理应用SWR缓存；动态认证拦截器不会自动进入key。
+上述 tenantId/userId/authRevision/getAccessToken 由应用提供。所有 useRequest 均使用 SWR 并默认自动请求。enabled:false 关闭自动请求，仍可调用 trigger/refresh；null params 同时阻止自动与手动请求，提供真实参数后再执行。useMutation 保持只在 trigger 时请求。切换身份时更新 cacheScope 并清理应用 SWR 缓存；动态认证拦截器不会自动进入 key。
+
+### v3 自动、手动与重新请求
+
+| 调用 | 行为 |
+|---|---|
+| `useRequest(params, body?, options?)` | 默认自动请求，HTTP 方法不影响这一行为 |
+| `useRequest(..., {enabled:false})` | 关闭自动请求，通过 `trigger()` / `refresh()` 请求 |
+| 返回值的 `trigger(newBody?)` | 立即请求；传入新 body 时绑定新 body 并使用独立缓存键 |
+| 返回值的 `refresh()` | 用当前 params 和最近一次已绑定/提交的 body 重新请求 |
+| `useMutation(...)` | 保持手动触发，用于表单提交、删除等事件操作 |
+| `request(...)` | 直接返回 Promise，调用时请求 |
+
+自动请求并非每次 React 重新渲染都请求；参数或 body 对应的缓存键变化时由 SWR 处理。GET/HEAD 保留 SWR 的查询默认策略；其他方法默认关闭聚焦、重连、轮询和错误自动重试，避免额外执行写操作，可通过该 Hook 的 swr 选项显式开启。enabled:false 会关闭所有自动来源；从 false 改为 true 会恢复自动请求。
+
+```tsx
+import * as React from 'react';
+import type {Operations} from './sdk/types.js';
+
+function Search({body, revision}: {body: Operations['main.users.createUser']['body']; revision: number}) {
+  // body 类型与 operationId 请以你生成的 SDK 为准。
+  const {data, error, isLoading, trigger, refresh} =
+    API.main.users.createUser.useRequest({}, body); // 默认自动，包括 POST
+
+  // refresh/trigger 引用稳定，可以在 effect 或自定义 Hook 回调中调用。
+  React.useEffect(() => {
+    if (revision > 0) void refresh().catch(console.error);
+  }, [revision, refresh]);
+  return <button onClick={() => void refresh().catch(console.error)}>重新请求</button>;
+}
+```
+
+`refresh()` 不接受新参数；修改组件传给 useRequest 的 params/body，或使用 trigger(newBody) 提交新 body。手动提交的 body 会复用到下一次 refresh；Hook 的 params/body/headers 或身份缓存作用域变化后，使用新的绑定值。已发起的请求仍遵循传入的 AbortSignal，不因 enabled:false 自动取消。
+
+返回值保留 SWR 的 data/error/isLoading/isValidating/mutate，并增加 trigger、refresh、isMutating（手动请求状态）。自动、手动请求均执行请求拦截器与 SWR onSuccess/onError 回调（局部配置覆盖全局）；手动请求会更新 data/error；失败默认拒绝 Promise，需 try/catch，或 `trigger(body, {throwOnError:false})` 后读取 error。无 body 接口可用 `trigger(undefined, {throwOnError:false})`。`mutate` 保留 SWR 的缓存接口，关闭自动请求时如需网络请求请用 refresh/trigger。
+
+**升级提示：v2 的 POST 等 useRequest 原先是手动的，v3 会默认自动请求。** 旧提交/删除调用请先替换为 useMutation，或显式添加 enabled:false，再重新生成。已有下载的 SDK 不会被网页自动修改。详见 [v3 迁移说明](docs/migration-v3.md)。
 
 ### 自定义请求和前后置处理
 
@@ -138,7 +174,7 @@ node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --stri
 ```
 
 ```sh
-npm install -D @batype/chainspec@^2.3.0
+npm install -D @batype/chainspec@^3.0.0
 npx chainspec --config chainspec.config.json
 # 接口更新后重新生成：
 npx chainspec --config chainspec.config.json --update

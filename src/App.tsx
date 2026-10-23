@@ -640,7 +640,7 @@ export default function App() {
                 <label className="check">
                   <input type="checkbox" checked={settings.hooks !== false}
                     onChange={(e) => updateConfig({ hooks: e.target.checked })} />
-                  <span><strong>生成 SWR Hooks</strong><small>查询缓存 + 手动触发写请求</small></span>
+                  <span><strong>生成 SWR Hooks</strong><small>默认自动请求 · 支持手动触发</small></span>
                   <span className="swr-mark">SWR ↗</span>
                 </label>
                 </details>
@@ -1032,13 +1032,13 @@ export default function App() {
             </article>
             <article>
               <span className="guide-number">03 / REACT</span>
-              <h3>读取有缓存，写入要触发。</h3>
+              <h3>自动或手动，由你选择。</h3>
               <p>
-                GET / HEAD 接入 useSWR；其他方法接入
-                useSWRMutation。切换身份时，更新 cacheScope。
+                useRequest 默认自动请求；enabled: false 后用 trigger，refresh 可重复获取。
+                useMutation 保持手动。切换身份时更新 cacheScope。
               </p>
               <code>
-                const {"{ trigger }"} = API.…useRequest(params, body, options)
+                const {"{ data, trigger, refresh }"} = API.…useRequest(…)
               </code>
             </article>
           </div>

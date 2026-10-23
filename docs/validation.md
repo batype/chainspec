@@ -85,3 +85,11 @@ npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理�
 - 认证端到端使用本地合成文档、测试账号/Token，未调用用户业务接口。浏览器Basic获取成功；再次打开账号密码为空；Bearer+X-API-Key获取并生成成功；403原因显示在弹窗；慢请求取消关闭且保留输入。导出的ZIP版本2.3.0，sourceRequest只有环境变量引用，所有文件均无本次测试Token/API Key值。
 - 桌面亮暗主题及390×844手机尺寸实际截图检查通过；弹窗内容独立滚动，底部操作始终可见；URL自动聚焦，关闭返回入口。临时视口已重置。真实SSO/第三方Cookie场景依赖目标站及浏览器策略，未以用户真实登录账号验证。
 - `npm run build`通过。项目外安装30文件tarball，CLI版本、带Basic的fetchDocument与公开TypeScript声明检查通过；包中只包含生成器与空白示例模板。最后的原始headers错误脱敏修改通过3组认证专项复测，未改SDK请求/Hook参数约定。
+
+## 3.0 useRequest 自动、手动与刷新
+
+- `npm test` 35组全部通过：保留已有25组SDK参数/类型/runtime/SWR/CLI/连接认证/翻译缓存回归，写操作手动旧用例改为显式useMutation。新增10组覆盖GET/POST/PUT/PATCH/DELETE默认自动、enabled:false不请求、trigger/refresh数据与loading、body缓存隔离、稳定函数在effect调用、required body延迟类型、null阻止手动、失败状态/恢复、并发旧结果不覆盖新body、enabled切换、空204不重复与不残留loading、runtime和局部/全局SWR回调。
+- 生产构建通过。普通SDK的request参数协议不变；新行为仅在重新生成的React Hook生效。v3迁移文档明确旧写useRequest需加enabled:false或改useMutation；npm包包含迁移文档。
+- 真实浏览器使用合成SDK与本地模拟适配器，POST首屏请求1次；关闭自动后trigger(newBody)、refresh、useEffect回调依次各发1次且复用body。手动模式改参数不请求，重新开启只发1次；模拟失败显示error，refresh后恢复并清除error。生产构建无新控制台错误；开发服务器首次依赖预构建热重载有React重复模块日志，生产构建单React实例验证正常。未向业务接口发请求。
+- 网页POST Hook预览显示默认enabled:true、refresh与enabled:false的完整类型示例。实际SDK ZIP manifest为3.0.0，新hooks和SDK说明一致。
+- 项目外独立安装最终31文件tarball及React/SWR/TypeScript依赖通过。根生成器API与CLI版本3.0.0、迁移文档可读取；CLI实际生成6操作/3模型SDK。网页下载ZIP与CLI生成的两份完整TypeScript SDK，使用独立安装依赖严格编译通过；未执行任何业务请求。

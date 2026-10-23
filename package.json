@@ -1,6 +1,6 @@
 {
   "name": "@batype/chainspec",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "description": "Generate typed chainable TypeScript SDKs and SWR hooks from OpenAPI JSON, locally.",
   "type": "module",
   "license": "MIT",
@@ -26,7 +26,8 @@
     "README.md",
     "LICENSE",
     "THIRD-PARTY-LICENSES.txt",
-    "examples/"
+    "examples/",
+    "docs/migration-v3.md"
   ],
   "scripts": {
     "templates": "node scripts/embed-templates.mjs",

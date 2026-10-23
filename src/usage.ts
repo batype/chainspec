@@ -42,13 +42,8 @@ export function usage(
         ? `// body 由你的表单或业务数据传入，按生成类型检查。\nasync function submit(body: ${bodyType}) {\n  const data = await ${access}.request(${p}, body, ${o});\n  return data;\n}\n`
         : `const data = await ${access}.request(${p}, ${o});\n`)
     );
-  if (op.method === "GET" || op.method === "HEAD")
-    return (
-      intro +
-      `function View(${op.body ? `body: ${bodyType}` : ""}) {\n  const { data, error, isLoading } =\n    ${access}.useRequest(${p}${body !== undefined ? `, ${body}` : ""}, ${JSON.stringify({ ...options, enabled: true }, null, 2)});\n  // 在组件或自定义 Hook 顶层调用。\n  return null;\n}\n`
-    );
   return (
     intro +
-    `function Action() {\n  const { trigger, isMutating } =\n    ${access}.useRequest(${p}${body !== undefined ? ", undefined" : ""}, ${o});\n  // params/options 已绑定；在提交事件中传 body，渲染不会发送请求。\n  const onSubmit = (${op.body ? `body: ${bodyType}` : ""}) => trigger(${body ?? ""});\n  return null;\n}\n`
+    `// 默认自动请求；refresh() 使用当前参数重新请求。\nfunction View(${op.body ? `body: ${bodyType}` : ""}) {\n  const { data, error, isLoading, trigger, refresh } =\n    ${access}.useRequest(${p}${body !== undefined ? `, ${body}` : ""}, ${JSON.stringify({ ...options, enabled: true }, null, 2)});\n  const onRefresh = () => refresh();\n  // refresh 也可在 useEffect 或自定义 Hook 的回调中调用。\n  return null;\n}\n\n// 关闭自动请求，交给事件触发；useMutation 也保持手动。\nfunction ManualAction() {\n  const { trigger, refresh, isMutating } =\n    ${access}.useRequest(${p}${body !== undefined ? ", undefined" : ""}, ${JSON.stringify({ ...options, enabled: false }, null, 2)});\n  const onSubmit = (${op.body ? `body: ${bodyType}` : ""}) => trigger(${body ?? ""});\n  // 请求体在首次 trigger(body) 时绑定，之后 refresh() 复用。\n  return null;\n}\n`
   );
 }

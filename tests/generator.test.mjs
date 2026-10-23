@@ -451,7 +451,7 @@ test("SWR hooks: queries read, disabled query pauses, writes only execute after 
     read = API.main.users.getUser.useRequest(
       enabled ? { path: { id: "one" } } : null,
     );
-    mutation = API.main.users.create.useRequest({});
+    mutation = API.main.users.create.useMutation({});
     return React.createElement(
       "span",
       null,
@@ -609,7 +609,7 @@ function Hooks(){
  bound.trigger();bound.trigger({name:'B'});
  // @ts-expect-error override body must match schema
  bound.trigger({name:3});
- const deferred=API.main.users.edit.useRequest(p,undefined,{headers:{'X-Version':'2'}});
+ const deferred=API.main.users.edit.useRequest(p,undefined,{headers:{'X-Version':'2'},enabled:false});
  deferred.trigger({name:'A'});
  // @ts-expect-error no bound body means trigger body is required
  deferred.trigger();
@@ -656,12 +656,12 @@ test("v2 SWR binds params and body, trigger can override body; no-body mutation 
     },
   });
   function View() {
-    bound = API.main.users.edit.useRequest(
+    bound = API.main.users.edit.useMutation(
       { path: { id: "1" }, query: { notify: true } },
       { name: "preset" },
       { headers: { "X-Version": "bound" } },
     );
-    deferred = API.main.users.edit.useRequest(
+    deferred = API.main.users.edit.useMutation(
       { path: { id: "2" }, query: { notify: false } },
       undefined,
       { headers: { "X-Version": "deferred" } },
@@ -670,7 +670,7 @@ test("v2 SWR binds params and body, trigger can override body; no-body mutation 
       { path: { id: "3" } },
       { headers: { "X-Read": "get" } },
     );
-    ping = API.main.users.ping.useRequest({}, { headers: { "X-Ping": "yes" } });
+    ping = API.main.users.ping.useMutation({}, { headers: { "X-Ping": "yes" } });
     return React.createElement("span", null, read.data?.name ?? "pending");
   }
   let root;

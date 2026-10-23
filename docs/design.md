@@ -58,3 +58,11 @@ CLI成功生成后原子写回未被并发修改的配置；重复生成可从�
 生成区只展开常用项，分组命名与CLI/导出分别折叠；翻译服务位于分组命名的次级折叠中。配置面板在桌面限制高度，JSON编辑区填满对应空间，避免长设置推远结果。JSON预览入口保持常驻。
 
 文档URL、Basic/Bearer、浏览器Cookie和额外请求头统一在连接dialog中设置。临时凭据只存在于挂载期间的组件状态，关闭/成功读取后卸载清除；请求失败保留输入便于修正，取消会撤销请求。配置保存sourceRequest中的环境变量引用，CLI在获取文档前读取.env。凭据不进入Worker、生成选项或SDK。认证读取仅对明确指定的源执行，不影响SDK业务请求。凭据请求禁止重定向，401/403返回明确提示而不回显响应内容。
+
+## 3.0 统一请求 Hook
+
+所有 HTTP 方法的 useRequest 使用同一 SWR 查询状态，默认自动请求；enabled:false 关闭自动来源，trigger/refresh 用显式请求更新对应参数/body的缓存。null params 同时暂停手动请求。useMutation 保留 v2 的手动语义，request 的入参及执行协议不变。
+
+手动 body 绑定与父 Hook 的 params/body/header/scope 缓存键关联；父入参改变时失效。trigger(newBody) 使用新缓存键，禁止将结果写入旧 body 的缓存。手动请求切换 key 时暂停该次自动启动，避免重复发送；enabled 从 false 变 true 时同 key 重新校验一次。回调使用稳定引用读取最新绑定，方便在 effect 中依赖 refresh。SWR 跟踪自动缓存状态，手动 pending/error 补充到返回值，空响应不会保持 loading。
+
+非 GET/HEAD 默认关闭 focus/reconnect/轮询/错误重试，显式局部 SWR 配置仍可启用。自动与手动请求均执行原 runtime 拦截器，手动请求还调用解析后的 SWR success/error 回调。显式并发请求不合并；SWR 按键隔离并阻止旧结果覆盖新请求。
