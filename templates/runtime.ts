@@ -30,6 +30,8 @@ export interface RequestContext {
   body: unknown;
   mediaType?: string;
   signal?: AbortSignal;
+  /** Optional Fetch implementation, supplied by the client configuration. */
+  fetch?: typeof globalThis.fetch;
   readonly operation: Definition;
 }
 export interface TransportResponse {
@@ -62,6 +64,8 @@ export interface ClientConfig {
   baseUrl?: string;
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
   request?: RequestAdapter;
+  /** Replace Fetch while retaining serialization, response parsing and interceptors. */
+  fetch?: typeof globalThis.fetch;
   beforeRequest?: BeforeRequest[];
   afterResponse?: AfterResponse[];
   onError?: OnError[];
@@ -204,7 +208,7 @@ export async function defaultRequest(
     } else
       throw new Error("Unsupported body format; configure a request adapter");
   }
-  const response = await fetch(ctx.url, {
+  const response = await (ctx.fetch ?? globalThis.fetch)(ctx.url, {
     method: ctx.method,
     headers,
     body,
@@ -318,6 +322,7 @@ export function createClient(config: ClientConfig = {}) {
             body,
             mediaType: def.mediaType,
             signal: options.signal,
+            fetch: config.fetch,
             operation: def,
           };
           for (const fn of [...before, ...(options.beforeRequest ?? [])])

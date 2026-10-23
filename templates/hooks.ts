@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig, unstable_serialize, type SWRConfiguration, type SWRResponse } from "swr";
 import useSWRMutation, {

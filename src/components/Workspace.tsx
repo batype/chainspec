@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { GeneratedProject } from "../core/model";
-import { usage } from "../usage";
+import { usage, type UsageEnvironment } from "../usage";
 import Code from "./Code";
 import Playground from "./Playground";
 
@@ -16,6 +16,7 @@ const views = [
   "usage",
   "types.ts",
   "client.ts",
+  "node.ts",
   "react.ts",
   "runtime.ts",
   "diagnostics",
@@ -32,7 +33,11 @@ export default function Workspace({
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(0),
     [mode, setMode] = useState<"request" | "hook">("request"),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [environment, setEnvironment] = useState<UsageEnvironment>("universal");
+  const serverExample = ["node", "next-server", "vite-ssr"].includes(
+    environment,
+  );
   const hooks = Object.hasOwn(project.files, "react.ts");
   const fallback =
     project.operations.find(
@@ -73,7 +78,12 @@ export default function Workspace({
   ).length;
   const code =
     view === "usage" && op
-      ? usage(project, op, hooks ? mode : "request")
+      ? usage(
+          project,
+          op,
+          hooks && !serverExample ? mode : "request",
+          environment,
+        )
       : view === "diagnostics"
         ? JSON.stringify(project.diagnostics, null, 2)
         : (project.files[view] ?? "");
@@ -276,7 +286,27 @@ export default function Workspace({
                       ? "文档与生成诊断"
                       : view}
                 </strong>
-                {view === "usage" && hooks && (
+                {view === "usage" && (
+                  <label className="environment-picker">
+                    运行环境
+                    <select
+                      value={environment}
+                      onChange={(e) =>
+                        setEnvironment(e.target.value as UsageEnvironment)
+                      }
+                    >
+                      <option value="universal">通用 / Vite</option>
+                      <option value="node">Node.js</option>
+                      {hooks && <option value="react">React / Vite SPA</option>}
+                      <option value="next-server">Next.js 服务端</option>
+                      {hooks && (
+                        <option value="next-client">Next.js 客户端组件</option>
+                      )}
+                      <option value="vite-ssr">Vite SSR 服务端取数</option>
+                    </select>
+                  </label>
+                )}
+                {view === "usage" && hooks && !serverExample && (
                   <div
                     className="mode-switch"
                     role="group"

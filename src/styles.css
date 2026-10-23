@@ -1896,3 +1896,5 @@ main.workspace-page { max-width:1680px; padding:28px 32px 40px; }
   .topbar nav a, .topbar nav a:nth-child(3) { white-space:nowrap; flex-shrink:0; display:inline; }
   .workspace-meta .local-label { display:block; }
 }
+.environment-picker { display:flex; align-items:center; gap:8px; font-size:10px; color:#a7b4c9; }
+.environment-picker select { background:#263141; color:#e2e7f0; border-color:#455269; font-size:11px; max-width:210px; }

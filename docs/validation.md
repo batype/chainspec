@@ -93,3 +93,12 @@ npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理�
 - 真实浏览器使用合成SDK与本地模拟适配器，POST首屏请求1次；关闭自动后trigger(newBody)、refresh、useEffect回调依次各发1次且复用body。手动模式改参数不请求，重新开启只发1次；模拟失败显示error，refresh后恢复并清除error。生产构建无新控制台错误；开发服务器首次依赖预构建热重载有React重复模块日志，生产构建单React实例验证正常。未向业务接口发请求。
 - 网页POST Hook预览显示默认enabled:true、refresh与enabled:false的完整类型示例。实际SDK ZIP manifest为3.0.0，新hooks和SDK说明一致。
 - 项目外独立安装最终31文件tarball及React/SWR/TypeScript依赖通过。根生成器API与CLI版本3.0.0、迁移文档可读取；CLI实际生成6操作/3模型SDK。网页下载ZIP与CLI生成的两份完整TypeScript SDK，使用独立安装依赖严格编译通过；未执行任何业务请求。
+
+## 3.1 Node、Next.js 与 Vite React SSR
+
+- 普通 index/node 入口不导入 React/SWR，React/hooks 入口保留 use client。新增独立 Node / React TypeScript 构建配置、私有 ESM 包元数据与可选 React/SWR peerDependencies，编译产物提供 JS 和 .d.ts。原 request/useRequest 入参、v3 默认自动请求以及 trigger/refresh 保持不变。
+- 独立系统临时目录中没有 React/SWR，生成 Node 入口及 tsconfig.node.json 严格编译并实际运行通过；编译期拒绝 useRequest 和缺失 path，运行期没有 Hook。自定义 Fetch 保留 headers、signal、序列化、解码和前后置钩子；完整 request 适配器仍优先。
+- 自动测试验证 React renderToString 不触发 Hook 请求、读取 fallbackData、并发 Alice/Bob 预取数据隔离；Vite 真实浏览器构建与 SSR 构建、执行 SSR bundle 均通过。预览环境测试验证 Node/SSR 使用 request、Next.js 客户端带边界并导入 dist。
+- Next.js 16.4.3 默认 Turbopack 的初次测试暴露 .js → .ts 源码解析不兼容；最终采用生成配置构建 dist，无全局 extensionAlias。真实 App Router 工程完成生产构建和 TypeScript 检查，Server Component 使用 node/dist 请求预取，Client Component 使用 React/dist 和 fallbackData 接管。
+- 真实浏览器分别验证 Next.js App Router 与 Vite 8.3.5 React SSR：首次呈现服务端预取结果，revalidateOnMount:false 下 hydration 不发送客户端重复请求；点击 refresh 后各发送一次客户端请求并更新数据。两页均无 hydration/控制台错误。仅调用隔离的 loopback 合成 API，未调用用户业务接口或使用真实凭据。测试 Node 为 24.13.0；CI 仍使用 Node 22。未验证 Next.js Edge runtime、Vue/Svelte SSR 或其他 React/Next.js 版本。
+- CLI --update 的额外文件保护保持；SDK 内产生 dist 后会被视为额外文件，持续生成场景按环境指南把 --outDir 设置到生成目录之外，或使用新的输出目录。不会为适配构建而放宽覆盖保护。

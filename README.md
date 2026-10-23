@@ -51,6 +51,25 @@ const deferred=API.main.users.createUser.useRequest({}, undefined, {enabled:fals
 
 这是对v1生成SDK的破坏性变更。迁移步骤见[docs/migration-v2.md](docs/migration-v2.md)。
 
+## 环境与入口
+
+同一份生成 SDK 按入口区分运行环境，不用重复生成：
+
+| 环境 | 生成结果中的入口 | 调用方式 |
+| --- | --- | --- |
+| Node / Vite SSR 取数 | `sdk/node.js` 或 `sdk/index.js` | `createAPI().…request()` |
+| Next.js 服务端 | `sdk/dist/node.js`（先构建） | `request()` |
+| Vite 普通浏览器应用 | `sdk/index.js` | `request()` |
+| Vite React SPA | `sdk/react.js` | `createReactAPI().…request()` / `useRequest()` |
+| Next.js 客户端组件 | `sdk/dist/react.js`（先构建） | `request()` / `useRequest()` |
+| Vite React SSR 共享组件与 hydration | `sdk/react.js` | 首屏 fallbackData + 挂载后 useRequest / refresh |
+
+Next.js Server Component 不能调用 Hook；Client Component 仍可能在服务端预渲染。服务端用 request 预取，再将可序列化数据交给 React 的 swr.fallbackData，按需要关闭首屏重复校验。SSR 为每个请求/渲染树创建独立客户端和缓存，不能共享用户认证。生成入口保留 use client 边界，不在通用入口引入 React。
+
+附带独立 Node / React 构建配置及可选 peerDependencies；Next.js 使用编译产物，兼容默认 Turbopack 的模块解析。Node-only 构建不会解析 React 入口。新增 `fetch` 配置可包装 Next.js 的 fetch 缓存策略，同时保留 SDK 序列化与拦截器。`request` 自定义适配器优先。完整步骤及 Next.js、Vite SSR 示例见 [环境接入指南](docs/environments.md)，也随下载 SDK 附带 `ENVIRONMENTS.md`。
+
+注意：npm 的 `@batype/chainspec` 是生成器；`sdk/node.js` 与 `sdk/react.js` 是生成结果的本地入口。原有 `@batype/chainspec/node` 为生成器的翻译适配器，不是业务 SDK。
+
 ## 使用下载的SDK
 
 将sdk文件夹放进TypeScript工程。普通入口不依赖React或SWR：
