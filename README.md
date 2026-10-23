@@ -13,6 +13,14 @@ React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。*
 
 ![ChainSpec](https://raw.githubusercontent.com/batype/chainspec/main/docs/preview-light.png)
 
+## 网页工作台
+
+网页分为两个独立页面：在「配置与生成」导入 OpenAPI JSON、连接受保护文档并调整生成配置；点击「生成并进入工作台」后，在「SDK 工作台」选择接口、查看类型、接入示例、源码和诊断，下载完整 SDK 或单个文件。返回配置不会丢失当前文档；配置改动后需要重新生成才能导出。
+
+「交互体验」使用与生成 SDK 共用的 runtime 和 SWR Hook，搭配本地模拟适配器。可编辑并应用 params/body/headers，运行 `request`、切换 `useRequest` 自动请求或 `enabled: false`，体验 `trigger()`、`refresh()` 和错误处理，并观察 URL 组装与前后置钩子的执行顺序。响应从 Schema 合成，**不会请求你的业务接口**；示例值不等于 Schema 验证，复杂类型需手动补全。上传文件在此处仅以 JSON 占位值演示，不代表真实二进制上传。
+
+页面、接口和视图使用 Hash 路由，兼容 GitHub Pages 子路径与浏览器前进/后退。文档和生成结果不写入持久存储；刷新后请重新导入或使用内置示例生成。
+
 ## 一次完整流程
 
 导入文件、粘贴JSON或从URL获取 → 填写配置表单 → 生成 → 搜索接口并预览调用、类型与诊断 → 下载完整SDK ZIP。输入与配置改动后，旧结果暂停复制/下载。输入面板可以折叠。支持亮色、暗色、系统主题和手机布局。

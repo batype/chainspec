@@ -3,10 +3,9 @@ import { zipSync, strToU8 } from "fflate";
 import type { GeneratedProject, GeneratorOptions } from "./core/model";
 import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
-import Code from "./components/Code";
+import Workspace from "./components/Workspace";
 import SourceDialog from "./components/SourceDialog";
 import { sourceRequestOptions, type SourceRequestConfig } from "./core/source-config";
-import { usage } from "./usage";
 import { DEFAULT_CONFIG, parseConfig, parseControllerNames, TRANSLATION_DEFAULTS, type ChainSpecConfig } from "./core/config";
 import { fetchDocument } from "./core/source";
 const namesCacheKey = "chainspec-controller-names-v1";
@@ -16,13 +15,6 @@ function cachedConfig() {
 }
 const defaultConfigText = JSON.stringify(cachedConfig(), null, 2);
 type Theme = "system" | "light" | "dark";
-type Preview =
-  | "usage"
-  | "client.ts"
-  | "types.ts"
-  | "runtime.ts"
-  | "react.ts"
-  | "diagnostics";
 function download(
   bytes: BlobPart,
   name: string,
@@ -54,10 +46,8 @@ export default function App() {
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [submitted, setSubmitted] = useState(""),
-    [search, setSearch] = useState(""),
-    [selected, setSelected] = useState(""),
-    [preview, setPreview] = useState<Preview>("usage"),
-    [mode, setMode] = useState<"request" | "hook">("request"),
+    [route, setRoute] = useState(window.location.hash),
+    [generatedInput, setGeneratedInput] = useState(""),
     [theme, setTheme] = useState<Theme>(readTheme),
     [inputOpen, setInputOpen] = useState(true);
   const worker = useRef<Worker | null>(null),
@@ -250,6 +240,10 @@ export default function App() {
       setBusy(false);
       setError(data.error ?? "");
       setResult(data.result ?? null);
+      if (data.result) {
+        setGeneratedInput(pendingGeneration.current.input);
+        window.location.hash = "/workspace";
+      }
       if (data.error) editor.current?.focus();
     };
     w.onerror = () => {
@@ -257,15 +251,6 @@ export default function App() {
       setResult(null);
       setError("本地生成线程发生错误，请刷新后重试。");
     };
-    const id = ++seq.current;
-    pendingGeneration.current = { id, input: exampleText, configText: defaultConfigText };
-    setBusy(true);
-    setSubmitted(JSON.stringify([exampleText, defaultConfigText]));
-    w.postMessage({
-      id,
-      input: exampleText,
-      options: JSON.parse(defaultConfigText),
-    });
     return () => { w.terminate(); remote.current?.abort(); };
   }, []);
   useEffect(() => {
@@ -283,45 +268,20 @@ export default function App() {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [theme]);
+  const workspace = route.startsWith("#/workspace");
   useEffect(() => {
-    if (result && !result.operations.some((o) => o.id === selected))
-      setSelected(
-        (
-          result.operations.find(
-            (o) =>
-              o.method === "GET" && o.parameters.some((p) => p.in === "path"),
-          ) ??
-          result.operations.find((o) => o.method === "GET") ??
-          result.operations[0]
-        )?.id ?? "",
-      );
-  }, [result, selected]);
-  const op =
-    result?.operations.find((o) => o.id === selected) ?? result?.operations[0];
-  const filtered = useMemo(
-    () =>
-      result?.operations.filter((o) =>
-        `${o.id} ${o.path} ${o.summary} ${o.tags.join(" ")}`
-          .toLowerCase()
-          .includes(search.toLowerCase()),
-      ) ?? [],
-    [result, search],
-  );
-  const groups = useMemo(() => {
-    const map = new Map<string, typeof filtered>();
-    for (const o of filtered) {
-      if (!map.has(o.controller)) map.set(o.controller, []);
-      map.get(o.controller)!.push(o);
-    }
-    return map;
-  }, [filtered]);
-  const code = result
-    ? preview === "usage" && op
-      ? usage(result, op, settings.hooks !== false ? mode : "request")
-      : preview === "diagnostics"
-        ? JSON.stringify(result.diagnostics, null, 2)
-        : (result.files[preview] ?? "此入口已关闭；开启 SWR 后重新生成。")
-    : "";
+    const onHash = () => setRoute(window.location.hash);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => {
+    document.title = workspace ? "SDK 工作台 · ChainSpec" : "ChainSpec · 配置与生成";
+    window.scrollTo(0, 0);
+    if (workspace) document.getElementById("workspace-title")?.focus({ preventScroll: true });
+  }, [workspace]);
+  useEffect(() => {
+    if (["#guide", "#studio", "#top"].includes(route)) document.getElementById(route.slice(1))?.scrollIntoView();
+  }, [route]);
   const clear = () => {
     edits.current++;
     imports.current++;
@@ -373,15 +333,6 @@ export default function App() {
       setError(e instanceof Error ? e.message : "文件需为UTF-8 JSON");
     }
   };
-  const copy = async () => {
-    if (!ready) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setNotice("当前预览已复制。");
-    } catch {
-      setNotice("剪贴板不可用，请手动选中代码复制。");
-    }
-  };
   const exportZip = () => {
     if (!ready || !result) return;
     const entries = Object.fromEntries(
@@ -399,15 +350,17 @@ export default function App() {
     );
     setNotice("SDK已下载，包含完整类型、运行时、诊断和使用说明。");
   };
-  const warnings =
-    result?.diagnostics.filter((d) => d.level === "warning") ?? [];
   return (
     <>
-      <a className="skip" href="#studio">
-        跳到生成器
+      <a className="skip" href={workspace ? "#workspace" : "#studio"} onClick={e => {
+        e.preventDefault();
+        const target = document.getElementById(workspace ? "workspace-title" : "studio");
+        target?.focus(); target?.scrollIntoView();
+      }}>
+        跳到主要内容
       </a>
       <header className="topbar">
-        <a className="brand" href="#top">
+        <a className="brand" href="#/configure">
           <img
             src={`${import.meta.env.BASE_URL}icon.svg`}
             alt=""
@@ -418,7 +371,8 @@ export default function App() {
           <span>从接口到调用</span>
         </a>
         <nav aria-label="主导航">
-          <a href="#studio">生成器</a>
+          <a href="#/configure" aria-current={!workspace ? "page" : undefined}>配置与生成</a>
+          <a href="#/workspace" aria-current={workspace ? "page" : undefined}>SDK 工作台</a>
           <a href="#guide">接入指南</a>
           <a
             href="https://github.com/batype/chainspec"
@@ -455,7 +409,7 @@ export default function App() {
       </dialog>
       {sourceOpen && <SourceDialog input={settings.input} request={settings.sourceRequest} loading={loadingUrl}
         onLoad={importUrl} onSave={saveConnection} onClose={closeConnection} />}
-      <main id="top">
+      {workspace ? result ? <Workspace project={result} documentText={generatedInput} route={route} ready={ready} onDownload={exportZip} /> : <main className="workspace-page workspace-empty" id="workspace"><span className="eyebrow">SDK WORKSPACE</span><h1 id="workspace-title" tabIndex={-1}>先生成，再体验。</h1><p>生成结果只保留在当前页面内存中。导入你的文档，或用内置示例生成一个 SDK。</p><a className="primary button-link" href="#/configure">前往配置与生成 →</a></main> : <main id="top">
         <section className="hero">
           <div>
             <div className="eyebrow">
@@ -472,6 +426,7 @@ export default function App() {
               <br />
               请求由你掌控，React 交给 SWR。
             </p>
+            <div className="hero-actions"><a className="primary button-link" href="#studio">开始配置 →</a><button type="button" disabled={busy || !input.trim() || Boolean(parsedConfig.error)} onClick={generate}>生成并进入工作台 ↗</button></div>
             <div className="hero-tags">
               <span>TypeScript 补全</span>
               <span>自定义请求与拦截器</span>
@@ -504,11 +459,11 @@ export default function App() {
             </footer>
           </div>
         </section>
-        <section className="studio" id="studio" aria-label="SDK生成器">
+        <section className="studio" id="studio" tabIndex={-1} aria-label="SDK生成器">
           <div className="studio-toolbar">
             <div>
               <span className="step">01</span>
-              <h2>构建你的调用方式</h2>
+              <h2>配置与生成</h2>
               <span className="local-label">◉ JSON 留在当前页面</span>
             </div>
             <div>
@@ -529,7 +484,7 @@ export default function App() {
                 onClick={generate}
                 disabled={busy || loadingUrl || !input.trim() || Boolean(parsedConfig.error)}
               >
-                {busy ? "正在生成…" : "生成 SDK"} <span>↗</span>
+                {busy ? "正在生成…" : "生成并进入工作台"} <span>↗</span>
               </button>
             </div>
           </div>
@@ -758,242 +713,7 @@ export default function App() {
                   ? "正在本地Worker中解析文档…"
                   : "")}
           </div>
-          {result && (
-            <>
-              <div className="result-strip">
-                <div>
-                  <span className="step success">✓</span>
-                  <div>
-                    <strong>{result.title}</strong>
-                    <small>
-                      v{result.version || "—"} ·{" "}
-                      {ready
-                        ? "已生成，可导出"
-                        : dirty
-                          ? "结果对应上一次生成"
-                          : "本地生成结果"}
-                    </small>
-                  </div>
-                </div>
-                <div className="counts">
-                  <span>
-                    <b>{result.operations.length}</b> 操作
-                  </span>
-                  <span>
-                    <b>
-                      {new Set(result.operations.map((o) => o.controller)).size}
-                    </b>{" "}
-                    分组
-                  </span>
-                  <span>
-                    <b>{result.schemaCount}</b> 模型
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPreview("diagnostics")}
-                    className={warnings.length ? "warning-count" : ""}
-                  >
-                    {warnings.length} 条提示
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className="export"
-                  disabled={!ready}
-                  onClick={exportZip}
-                >
-                  ↓ 下载完整 SDK <span>.zip</span>
-                </button>
-              </div>
-              <div className="results">
-                <aside className="explorer" aria-label="接口列表">
-                  <div className="explorer-head">
-                    <strong>接口导航</strong>
-                    <span>{filtered.length}</span>
-                  </div>
-                  <label className="sr-only" htmlFor="search">
-                    搜索接口
-                  </label>
-                  <div className="search-box">
-                    <span>⌕</span>
-                    <input
-                      id="search"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="搜索方法、路径、名称"
-                    />
-                  </div>
-                  <div className="operation-list">
-                    {[...groups].map(([name, ops]) => (
-                      <details open key={name}>
-                        <summary>
-                          <span>⌄</span> {name} <small>{ops.length}</small>
-                        </summary>
-                        {ops.map((o) => (
-                          <button
-                            type="button"
-                            key={o.id}
-                            onClick={() => {
-                              setSelected(o.id);
-                              setPreview("usage");
-                            }}
-                            className={selected === o.id ? "selected" : ""}
-                            aria-pressed={selected === o.id}
-                          >
-                            <span
-                              className={
-                                "method mini " + o.method.toLowerCase()
-                              }
-                            >
-                              {o.method}
-                            </span>
-                            <span>{o.name}</span>
-                            {o.deprecated && <em title="已废弃">↯</em>}
-                          </button>
-                        ))}
-                      </details>
-                    ))}
-                    {!filtered.length && (
-                      <p className="no-results">没有匹配的接口。</p>
-                    )}
-                  </div>
-                </aside>
-                <section className="preview-panel" aria-label="生成结果预览">
-                  <div className="file-tabs" role="group" aria-label="预览文件">
-                    {(
-                      [
-                        "usage",
-                        "types.ts",
-                        "client.ts",
-                        ...(settings.hooks !== false ? ["react.ts"] : []),
-                        "runtime.ts",
-                        "diagnostics",
-                      ] as Preview[]
-                    ).map((file) => (
-                      <button
-                        type="button"
-                        key={file}
-                        aria-pressed={preview === file}
-                        className={preview === file ? "active" : ""}
-                        onClick={() => setPreview(file)}
-                      >
-                        {file === "usage"
-                          ? "调用示例"
-                          : file === "diagnostics"
-                            ? "诊断报告"
-                            : file}
-                      </button>
-                    ))}
-                  </div>
-                  {preview === "usage" && op && (
-                    <div className="operation-title">
-                      <div>
-                        <span className={"method " + op.method.toLowerCase()}>
-                          {op.method}
-                        </span>
-                        <code>{op.path}</code>
-                        <span>{op.deprecated ? "已废弃" : op.summary}</span>
-                      </div>
-                      {settings.hooks !== false && (
-                        <div
-                          className="mode-switch"
-                          role="group"
-                          aria-label="调用方式"
-                        >
-                          <button
-                            type="button"
-                            aria-pressed={mode === "request"}
-                            onClick={() => setMode("request")}
-                          >
-                            request
-                          </button>
-                          <button
-                            type="button"
-                            aria-pressed={mode === "hook"}
-                            onClick={() => setMode("hook")}
-                          >
-                            useRequest
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className="code-heading">
-                    <span>
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    <small>
-                      {preview === "usage"
-                        ? "example.ts"
-                        : preview === "diagnostics"
-                          ? "diagnostics.json"
-                          : preview}
-                    </small>
-                    <span>TYPESCRIPT · UTF-8</span>
-                  </div>
-                  {preview === "diagnostics" ? (
-                    <div className="diagnostic-list">
-                      {result.diagnostics.slice(0, 120).map((d, i) => (
-                        <article key={i}>
-                          <span className={d.level}>
-                            {d.level === "warning" ? "!" : "i"}
-                          </span>
-                          <div>
-                            <strong>{d.message}</strong>
-                            {d.location && <code>{d.location}</code>}
-                            <small>{d.code}</small>
-                          </div>
-                        </article>
-                      ))}
-                      {result.diagnostics.length > 120 && (
-                        <p>显示前120条，完整报告在manifest.json中。</p>
-                      )}
-                    </div>
-                  ) : (
-                    <Code text={code} />
-                  )}
-                  <div className="preview-actions">
-                    <span>
-                      {preview === "usage"
-                        ? "示例参数需按生成类型补全；不发送请求"
-                        : preview === "diagnostics"
-                          ? "文档缺漏与生成取舍均会记录"
-                          : "完整源码包含在下载的 SDK 中"}
-                    </span>
-                    <div>
-                      <button
-                        type="button"
-                        disabled={!ready}
-                        onClick={() => {
-                          if (ready)
-                            download(
-                              code,
-                              preview === "usage"
-                                ? "example.ts"
-                                : preview === "diagnostics"
-                                  ? "diagnostics.json"
-                                  : preview,
-                            );
-                        }}
-                      >
-                        下载当前
-                      </button>
-                      <button
-                        type="button"
-                        className="copy"
-                        disabled={!ready}
-                        onClick={() => void copy()}
-                      >
-                        复制代码 ↗
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              </div>
-            </>
-          )}
+          {ready && <div className="generated-link"><span>✓ {result?.title} 已生成，可进入独立工作台体验与下载。</span><a href="#/workspace">进入 SDK 工作台 →</a></div>}
           {!result && !busy && (
             <div className="empty">
               <span>{`{ ↳ }`}</span>
@@ -1058,7 +778,7 @@ export default function App() {
               Schema约束。多媒体类型会选择并提示，缺少模型使用unknown。鉴权方案不会自动转为真实凭据。生成器不发送业务请求；下载后的SDK只有被业务调用时才发送请求。
             </p>
             <p>
-              仅保存主题；文档和结果保留在本页内存。清空可移除当前文档与生成结果。SWR入口必须遵循React
+              仅保存主题与英文分组名称缓存；文档和结果保留在本页内存。清空可移除当前文档与生成结果。SWR入口必须遵循React
               Hooks规则。更多边界与自定义适配器示例见下载包README。
             </p>
           </div>
@@ -1078,7 +798,7 @@ export default function App() {
             </a>
           </div>
         </footer>
-      </main>
+      </main>}
     </>
   );
 }
