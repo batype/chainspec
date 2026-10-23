@@ -4,7 +4,7 @@ import { resolve, dirname, basename, join } from "node:path";
 import { loadEnvFile } from "node:process";
 import { createNodeTranslator } from "./translation-provider.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { generateSDKAsync, parseConfig, parseControllerNames, fetchDocument, MAX_BYTES, VERSION } from "../lib/core/index.js";
+import { generateSDKAsync, parseConfig, parseControllerNames, fetchDocument, sourceRequestOptions, MAX_BYTES, VERSION } from "../lib/core/index.js";
 const args = process.argv.slice(2), opts = {};
 const marker = ".chainspec-generated.json";
 const digest = text => createHash("sha256").update(text).digest("hex");
@@ -53,8 +53,13 @@ try {
   if (!source || !destination) throw Error("--in and --out, or --config, are required");
   const settings = { ...config, ...opts };
   if (settings.groupBy && !["path", "tag"].includes(settings.groupBy)) throw Error("--group-by must be path or tag");
+  if (envPath) loadEnvFile(envPath);
+  else if (configPath) {
+    try { loadEnvFile(resolve(base, ".env")); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+  }
   const text = /^[a-z][a-z\d+.-]*:/i.test(source)
-    ? await fetchDocument(source)
+    ? await fetchDocument(source, undefined, sourceRequestOptions(config?.sourceRequest, process.env))
     : await localJSON(resolve(inputPath ? process.cwd() : base, source));
   const dir = destination;
   const old = await exists(dir);
@@ -79,11 +84,6 @@ try {
   let cachedNames = {};
   if (old && await exists(join(dir, "controller-names.json")))
     cachedNames = parseControllerNames(await localJSON(join(dir, "controller-names.json")));
-  if (envPath) loadEnvFile(envPath);
-  else if (configPath) {
-    try { loadEnvFile(resolve(base, ".env")); }
-    catch (error) { if (error.code !== "ENOENT") throw error; }
-  }
   const translate = createNodeTranslator(settings.translation ?? { provider: "mymemory" });
   const result = await generateSDKAsync(text, {
     ...settings, controllerNames: { ...cachedNames, ...settings.controllerNames },

@@ -1718,3 +1718,58 @@ summary {
 .translation-settings .settings-grid { margin-top:0; }
 .translation-settings .config-help { margin:0; }
 .translation-command { display:block; padding:10px; border:1px solid var(--line); border-radius:5px; background:var(--editor); font:11px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+
+/* Progressive configuration keeps the editor and generated code in view. */
+.settings-intro { margin-bottom:18px; }
+.settings-section { border:1px solid var(--line); border-radius:9px; margin:12px 0 0; padding:0 14px; font-size:12px; }
+.settings-section > summary { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:15px 0; list-style:none; cursor:pointer; font-weight:600; }
+.settings-section > summary::-webkit-details-marker { display:none; }
+.settings-section > summary::before { content:'›'; color:var(--muted); font-size:17px; width:10px; line-height:1; }
+.settings-section[open] > summary::before { transform:rotate(90deg); }
+.settings-section > summary small { color:var(--muted); margin-left:auto; font-size:10px; font-weight:400; }
+.settings-section[open] { padding-bottom:14px; }
+.settings-section .settings-grid { margin-top:5px; }
+.settings-section .check { margin-top:16px; margin-bottom:0; }
+.translation-options { margin-top:14px; }
+.translation-options > summary { font-size:11px; cursor:pointer; }
+.translation-options > summary small { color:var(--muted); margin-left:8px; font-size:10px; }
+.source-settings-button { padding:6px 9px; font-size:11px; color:var(--accent); background:var(--accent-soft); border-color:transparent; white-space:nowrap; }
+.source-settings-button span { margin-right:3px; }
+.source-dialog { width:min(660px,calc(100vw - 32px)); }
+.connection-fields { border:0; padding:0; margin:0; min-width:0; display:grid; gap:16px; }
+.connection-fields label:not(.connection-cookie), .connection-grid label { display:flex; flex-direction:column; gap:8px; font-size:12px; min-width:0; }
+.connection-fields input:not([type="checkbox"]), .connection-fields select { width:100%; min-width:0; font-size:12px; }
+.connection-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.connection-cookie { display:flex; align-items:flex-start; gap:9px; font-size:12px; cursor:pointer; padding:12px; background:var(--soft); border-radius:7px; }
+.connection-cookie input { margin-top:3px; accent-color:var(--accent); }
+.connection-cookie small { display:block; margin-top:5px; color:var(--muted); font-size:11px; line-height:1.6; }
+.connection-extra { font-size:12px; }
+.connection-extra summary { cursor:pointer; line-height:1.6; }
+.connection-extra summary small { font-size:10px; color:var(--muted); margin-left:5px; }
+.connection-extra .connection-grid { margin-top:12px; }
+.connection-header-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:8px; margin-top:10px; }
+.connection-header-row button { padding:6px 10px; }
+.connection-note, .connection-help p { color:var(--muted); font-size:11px; line-height:1.8; }
+.connection-note { padding:12px; border:1px solid var(--line); border-radius:7px; margin:18px 0 12px; }
+.source-dialog .config-error { margin:12px 0 0; }
+@media(max-width:760px) {
+  .section-head { height:auto; min-height:53px; gap:8px; flex-wrap:wrap; }
+  .section-head > div { margin-left:auto; }
+  .source-settings-button { font-size:10px; }
+  .settings-section { padding-left:12px; padding-right:12px; }
+  .settings-section > summary small { font-size:9px; }
+  .connection-grid { grid-template-columns:1fr; }
+  .source-dialog .config-dialog-actions { flex-wrap:wrap; }
+  .source-dialog .config-dialog-actions button { flex:1; white-space:nowrap; }
+}
+.source-panel { display:flex; flex-direction:column; }
+.source-panel .section-head, .source-panel .editor-footer { flex-shrink:0; }
+.source-panel > textarea { flex:1; height:0; min-height:340px; }
+.config-error:empty { display:none; }
+@media(min-width:761px) { .settings-panel { max-height:640px; overflow-y:auto; } }
+@media(max-width:760px) { .source-panel > textarea { flex:none; height:280px; min-height:200px; } }
+.source-dialog[open] { display:flex; flex-direction:column; overflow:hidden; }
+.source-dialog .config-dialog-heading { flex-shrink:0; }
+.source-dialog form { min-height:0; display:flex; flex-direction:column; }
+.connection-scroll { min-height:0; overflow-y:auto; padding:3px 5px 3px 3px; margin:0 -5px 0 -3px; }
+.source-dialog .config-dialog-actions { flex-shrink:0; padding-top:14px; margin-top:14px; border-top:1px solid var(--line); }

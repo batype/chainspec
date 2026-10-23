@@ -77,3 +77,11 @@ npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理�
 - 前端与Worker继续React+Vite，共用独立核心；SDK请求运行时及SWR参数约定未变。同步generateSDK离线；新增异步生成和Node适配器。
 - 最终生产构建通过。项目外安装26文件的tarball，根入口与@batype/chainspec/node可导入，TypeScript声明严格检查通过；CLI版本、translate-server帮助及缺少付费密钥时的缓存复用通过。Node适配器限速调整后的6组相关测试再次通过。
 - 浏览器刷新后5条映射仍可复用，切换有道/百度/Google均显示正确的环境变量字段；已缓存名称在代理关闭后仍能生成。未进行真实付费账户鉴权实测。
+
+## 2.3 配置归类、文档连接与认证
+
+- 默认只展开常用配置；分组命名、翻译服务、CLI与导出按需展开，JSON预览按钮常驻。文档URL从编辑器移至连接弹窗，粘贴和文件导入入口保留。
+- `npm test` 25组全部通过，包含原有22组SDK类型、runtime/SWR、CLI更新保护、翻译及缓存回归。新增配置拒绝明文凭据/错误环境变量/重复头，UTF-8 Basic、Bearer+自定义头、401/403、凭据重定向限制，以及CLI在HTTP读取前载入.env；缺少凭据不会请求网络。原fetchDocument的signal位置兼容，长度/流式限额及取消保持。
+- 认证端到端使用本地合成文档、测试账号/Token，未调用用户业务接口。浏览器Basic获取成功；再次打开账号密码为空；Bearer+X-API-Key获取并生成成功；403原因显示在弹窗；慢请求取消关闭且保留输入。导出的ZIP版本2.3.0，sourceRequest只有环境变量引用，所有文件均无本次测试Token/API Key值。
+- 桌面亮暗主题及390×844手机尺寸实际截图检查通过；弹窗内容独立滚动，底部操作始终可见；URL自动聚焦，关闭返回入口。临时视口已重置。真实SSO/第三方Cookie场景依赖目标站及浏览器策略，未以用户真实登录账号验证。
+- `npm run build`通过。项目外安装30文件tarball，CLI版本、带Basic的fetchDocument与公开TypeScript声明检查通过；包中只包含生成器与空白示例模板。最后的原始headers错误脱敏修改通过3组认证专项复测，未改SDK请求/Hook参数约定。

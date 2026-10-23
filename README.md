@@ -121,7 +121,7 @@ node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --stri
 
 ### 一份 JSON 配置，网页与代码库共用
 
-网页的配置区使用表单填写，点击旁边“查看配置”可预览、复制JSON；支持配置导入/导出，导入后回填表单。完整SDK ZIP也包含`chainspec.config.json`。配置格式版本`version: 1`与生成器npm版本独立。
+网页配置分为“常用配置”“分组命名”“CLI 与导出”，默认只展开常用项。翻译服务设置在“分组命名”内按需展开。点击旁边“查看配置”可预览、复制JSON；支持配置导入/导出，导入后回填表单。完整SDK ZIP也包含`chainspec.config.json`。配置格式版本`version: 1`与生成器npm版本独立。
 
 ```json
 {
@@ -138,7 +138,7 @@ node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --stri
 ```
 
 ```sh
-npm install -D @batype/chainspec@^2.2.0
+npm install -D @batype/chainspec@^2.3.0
 npx chainspec --config chainspec.config.json
 # 接口更新后重新生成：
 npx chainspec --config chainspec.config.json --update
@@ -148,7 +148,7 @@ npx chainspec --in https://example.com/api-json --out ./new-sdk
 
 加入你项目的package.json：`"sdk:generate": "chainspec --config chainspec.config.json --update"`，以后执行`npm run sdk:generate`即可。
 
-`input`也可以是`./openapi.json`，在代码库保留对应文件即可。配置文件中的本地input/output路径相对于配置文件；显式CLI参数覆盖JSON，并相对于当前工作目录。还可配置`stripPrefix`、`baseUrl`。未知键及错误类型直接报错，配置文件不执行JavaScript。网页只读取当前导入的JSON，不根据本地路径自动读磁盘；配置中的URL需要点击“获取JSON”。输出目录只用于CLI。
+`input`也可以是`./openapi.json`，在代码库保留对应文件即可。配置文件中的本地input/output路径相对于配置文件；显式CLI参数覆盖JSON，并相对于当前工作目录。还可配置`stripPrefix`、`baseUrl`。未知键及错误类型直接报错，配置文件不执行JavaScript。网页只读取当前导入的JSON，不根据本地路径自动读磁盘；配置中的 URL 需要在左侧“连接设置”弹窗中点击“获取并载入”。输出目录只用于CLI。
 
 首个Tag保留为分组依据，中文标签仍保留在说明和搜索中。2.2起网页/CLI默认自动翻译缺失的中文分组；已有映射直接复用，`translateNames:false`或`--no-translate`关闭外部翻译。调用链只生成ASCII标识符：显式`controllerNames`优先，未映射的非ASCII分组从路径推导并提示；同一Tag保持同一分组，重名使用稳定后缀。建议为中文Tag显式映射并提交配置，让名字在路径变化后仍保持稳定。2.0已有中文调用名的SDK需重新生成并修改调用；原有英文别名与v2入参约定保持不变。
 
@@ -163,6 +163,53 @@ API.main.users.listOrders.request({
 }, { headers: { 'X-Client': 'web' } });
 // 如果文档还声明body：request({path, query}, body, options)。
 // useRequest使用同样的位置；具体字段由文档推导。
+```
+
+### 2.3 文档连接与访问认证
+
+点击 OpenAPI JSON 标题旁的“连接设置”，在弹窗中填写 URL、认证方式和可选请求头；原有粘贴和文件导入继续可用。“保存设置”只保存连接配置，“获取并载入”会读取文档。失败提示保留在弹窗，取消或关闭会中止请求。
+
+- **Basic**：HTTP 账号密码认证，使用 Authorization: Basic。
+- **Bearer**：填写 Token，由工具添加 Bearer 前缀。
+- **自定义请求头**：如 X-API-Key、X-Tenant-ID；可与 Basic/Bearer 配合。Authorization 不可重复配置。
+- **Cookie 登录**：先在目标站登录，再勾选“携带已有登录 Cookie”。表单登录、验证码和 SSO 需要在目标站完成，工具不代替登录流程。是否能跨站使用 Cookie 取决于服务器 CORS、SameSite 和浏览器第三方 Cookie 策略。
+
+网页填写的账号、密码、Token、自定义请求头值仅用于当前获取；关闭弹窗即清除，不写入 localStorage、导出配置或 SDK。配置只保存环境变量名；重新打开需要重新填写凭据。保存 URL 时不要在查询参数中放密钥。文档获取认证与生成后 SDK 的业务认证相互独立。
+
+CLI 使用同一份配置，在配置旁放 `.env`（已有进程环境变量优先；也可 `--env-file PATH`）：
+
+```json
+{
+  "version": 1,
+  "input": "https://example.com/api-json",
+  "output": "./src/api",
+  "sourceRequest": {
+    "auth": {
+      "type": "basic",
+      "usernameEnv": "OPENAPI_USERNAME",
+      "passwordEnv": "OPENAPI_PASSWORD"
+    },
+    "headersEnv": { "X-Tenant-ID": "OPENAPI_TENANT" }
+  }
+}
+```
+
+```dotenv
+OPENAPI_USERNAME=your-account
+OPENAPI_PASSWORD=your-password
+OPENAPI_TENANT=your-tenant
+```
+
+Bearer 配置为 `"auth": {"type":"bearer","tokenEnv":"OPENAPI_TOKEN"}`。无认证时省略 `auth`。完整模板：[连接配置](examples/source.config.json)、[环境变量模板](examples/source.env.example)。`.env` 不应提交到 Git。Node 不会自动读取浏览器 Cookie；CLI 若需要已有会话，可通过 `headersEnv.Cookie` 引用本地环境变量。
+
+网页仍需目标站允许当前 Origin、Authorization/自定义请求头；Cookie 请求还需允许凭据且不能使用通配 Origin。无法跨域时可下载 JSON 导入或使用 CLI。本工具不会绕过访问权限。携带凭据时禁止跟随重定向，请填写最终的 JSON 地址；无认证的原有 URL 导入仍支持跳转。401/403 会提示检查认证和权限。参见 [HTTP 认证](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Authentication)、[CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS)。
+
+Node API 保持原有第二位置的 signal，新增可选第三参数：
+
+```ts
+import {fetchDocument, sourceRequestOptions} from '@batype/chainspec';
+const text = await fetchDocument(config.input, signal,
+  sourceRequestOptions(config.sourceRequest, process.env));
 ```
 
 ### 2.2 自动翻译、API Key 与名称缓存

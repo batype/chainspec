@@ -1,10 +1,12 @@
 import type { GeneratorOptions, TranslationConfig } from "./model.js";
+import { parseSourceRequest, type SourceRequestConfig } from "./source-config.js";
 
 /** Shared by the web editor and CLI. Paths resolve relative to the config file. */
 export type ChainSpecConfig = GeneratorOptions & {
   version: 1;
   input: string;
   output: string;
+  sourceRequest?: SourceRequestConfig;
 };
 export const DEFAULT_CONFIG: ChainSpecConfig = {
   version: 1,
@@ -19,7 +21,7 @@ export const DEFAULT_CONFIG: ChainSpecConfig = {
 };
 const keys = new Set([
   "version", "input", "output", "namespace", "groupBy", "stripPrefix",
-  "controllerNames", "baseUrl", "hooks", "translateNames", "translation",
+  "controllerNames", "baseUrl", "hooks", "translateNames", "translation", "sourceRequest",
 ]);
 export function parseConfig(input: string | unknown): ChainSpecConfig {
   let value: any = input;
@@ -46,6 +48,7 @@ export function parseConfig(input: string | unknown): ChainSpecConfig {
     throw new Error("hooks 必须为布尔值");
   if (value.translateNames !== undefined && typeof value.translateNames !== "boolean")
     throw new Error("translateNames 必须为布尔值");
+  if (value.sourceRequest !== undefined) parseSourceRequest(value.sourceRequest);
   if (value.translation !== undefined) parseTranslationConfig(value.translation);
   if (value.stripPrefix && !value.stripPrefix.startsWith("/"))
     throw new Error("stripPrefix 必须以 / 开头");

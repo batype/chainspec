@@ -4,6 +4,8 @@ import type { GeneratedProject, GeneratorOptions } from "./core/model";
 import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
 import Code from "./components/Code";
+import SourceDialog from "./components/SourceDialog";
+import { sourceRequestOptions, type SourceRequestConfig } from "./core/source-config";
 import { usage } from "./usage";
 import { DEFAULT_CONFIG, parseConfig, parseControllerNames, TRANSLATION_DEFAULTS, type ChainSpecConfig } from "./core/config";
 import { fetchDocument } from "./core/source";
@@ -44,7 +46,7 @@ function readTheme(): Theme {
 export default function App() {
   const [input, setInput] = useState(exampleText),
     [configText, setConfigText] = useState(defaultConfigText),
-    [sourceUrl, setSourceUrl] = useState(""),
+    [sourceOpen, setSourceOpen] = useState(false),
     [loadingUrl, setLoadingUrl] = useState(false),
     [mappingText, setMappingText] = useState(""),
     [result, setResult] = useState<GeneratedProject | null>(null),
@@ -134,22 +136,29 @@ export default function App() {
       setNotice("JSON 配置已复制，可用于 CLI。");
     } catch { setNotice("复制失败，请导出配置文件或手动复制。"); }
   };
-  useEffect(() => {
-    const source = parsedConfig.value?.input;
-    if (source !== undefined) setSourceUrl(/^https?:\/\//i.test(source) ? source : "");
-  }, [parsedConfig.value?.input]);
   const stateKey = JSON.stringify([input, configText]);
   const dirty = stateKey !== submitted;
   const ready = Boolean(result) && !dirty && !busy && !error;
   const options = (): GeneratorOptions => {
-    const { version, input, output, ...opts } = parseConfig(configText);
+    const { version, input, output, sourceRequest, ...opts } = parseConfig(configText);
     return opts;
   };
   const setSource = (source: string) => setConfigText((previous) => {
     try { return JSON.stringify({ ...parseConfig(previous), input: source }, null, 2); }
     catch { return previous; }
   });
-  const importUrl = async () => {
+  const saveConnection = (url: string, request: SourceRequestConfig) => {
+    updateConfig({ input: url, sourceRequest: request });
+    setNotice("连接设置已保存，配置只包含环境变量名；下次获取时请填写本次凭据。");
+  };
+  const closeConnection = () => {
+    imports.current++;
+    remote.current?.abort();
+    setLoadingUrl(false);
+    setSourceOpen(false);
+  };
+  const importUrl = async (url: string, request: SourceRequestConfig, values: Record<string, string>) => {
+    const requestOptions = sourceRequestOptions(request, values);
     if (busy) cancelGeneration();
     const edit = edits.current, id = ++imports.current;
     remote.current?.abort();
@@ -159,19 +168,19 @@ export default function App() {
     setError("");
     setNotice("");
     try {
-      const url = sourceUrl.trim();
-      const text = await fetchDocument(url, controller.signal);
-      if (edit !== edits.current || id !== imports.current) return;
+      const text = await fetchDocument(url, controller.signal, requestOptions);
+      if (edit !== edits.current || id !== imports.current) return false;
       edits.current++;
       setInput(text);
-      setSource(url);
+      updateConfig({ input: url, sourceRequest: request });
       setInputOpen(true);
-      setNotice("JSON 已从链接读入，点击生成 SDK。来源已写入有效的 JSON 配置。");
+      setNotice("JSON 已载入，点击生成 SDK。连接配置已保存，真实凭据未保存。");
+      return true;
     } catch (e) {
-      if (id !== imports.current || edit !== edits.current) return;
-      setError(e instanceof TypeError
-        ? "无法读取链接：请检查网络、HTTPS 和目标站 CORS；也可下载 JSON 导入，或使用 CLI 获取。"
-        : e instanceof Error ? e.message : "获取失败");
+      if (id !== imports.current || edit !== edits.current) return false;
+      const message = e instanceof Error ? e.message : "获取失败";
+      setError(message);
+      throw new Error(message);
     } finally {
       if (id === imports.current) setLoadingUrl(false);
     }
@@ -187,8 +196,7 @@ export default function App() {
       if (file.size > MAX_BYTES) throw new Error("配置最大 8 MiB");
       const config = parseConfig(await file.text());
       setConfigText(JSON.stringify(config, null, 2));
-      setSourceUrl(/^https?:\/\//i.test(config.input) ? config.input : "");
-      setNotice("配置已导入；URL 来源请点击获取，本地来源请另行导入 JSON 文件。");
+      setNotice("配置已导入；URL 来源请打开连接设置获取，本地来源请另行导入 JSON 文件。");
       setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "配置有误"); }
   };
@@ -319,7 +327,6 @@ export default function App() {
     imports.current++;
     remote.current?.abort();
     setLoadingUrl(false);
-    setSourceUrl("");
     seq.current++;
     worker.current?.postMessage({ action: "cancel" });
     setInput("");
@@ -446,6 +453,8 @@ export default function App() {
           <button type="button" className="primary" onClick={exportConfig} disabled={Boolean(parsedConfig.error)}>↓ 导出配置</button>
         </div>
       </dialog>
+      {sourceOpen && <SourceDialog input={settings.input} request={settings.sourceRequest} loading={loadingUrl}
+        onLoad={importUrl} onSave={saveConnection} onClose={closeConnection} />}
       <main id="top">
         <section className="hero">
           <div>
@@ -532,6 +541,8 @@ export default function App() {
                     <span className="file-symbol">{`{ }`}</span> OpenAPI JSON
                   </h3>
                   <div>
+                    <button type="button" className="source-settings-button" aria-haspopup="dialog"
+                      onClick={() => setSourceOpen(true)}><span aria-hidden="true">⚙</span> 连接设置</button>
                     <label className="import-file">
                       导入文件
                       <input
@@ -552,14 +563,6 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-                <form className="url-import" onSubmit={(e) => { e.preventDefault(); void importUrl(); }}>
-                  <label className="sr-only" htmlFor="source-url">OpenAPI JSON 链接</label>
-                  <input id="source-url" type="url" placeholder="https://example.com/api-json"
-                    value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required />
-                  <button type="submit" disabled={loadingUrl || !sourceUrl.trim()}>{loadingUrl ? "获取中…" : "获取 JSON"}</button>
-                  {loadingUrl && <button type="button" onClick={() => remote.current?.abort()}>取消</button>}
-                </form>
-                <p className="source-help">只读取你指定的 JSON 链接；需目标站允许 CORS。解析和生成在本地完成。</p>
                 <label htmlFor="spec" className="sr-only">
                   Swagger或OpenAPI JSON
                 </label>
@@ -605,7 +608,9 @@ export default function App() {
                   <button type="button" className="view-config" aria-haspopup="dialog"
                     onClick={() => configDialog.current?.showModal()}>查看配置</button>
                 </div>
-                <p className="config-help">填写对应选项；同一份配置可导出给 CLI 使用。</p>
+                <p className="config-help settings-intro">先设置调用方式，再按需调整命名和导出。</p>
+                <details className="settings-section common-settings" open>
+                  <summary><span>常用配置</span><small>调用方式与服务地址</small></summary>
                 <div className="settings-grid">
                   <label htmlFor="config-namespace">命名空间
                     <input id="config-namespace" value={settings.namespace ?? "main"} spellCheck={false}
@@ -638,13 +643,16 @@ export default function App() {
                   <span><strong>生成 SWR Hooks</strong><small>查询缓存 + 手动触发写请求</small></span>
                   <span className="swr-mark">SWR ↗</span>
                 </label>
-                <details className="mapping-settings" open>
-                  <summary>分组英文名称 <small>{mappings.length} 条映射 · {settings.translateNames !== false ? "自动翻译" : "离线命名"}</small></summary>
+                </details>
+                <details className="settings-section mapping-settings">
+                  <summary><span>分组命名</span><small>{mappings.length} 条映射 · {settings.translateNames !== false ? "自动翻译" : "离线命名"}</small></summary>
                   <label className="translate-toggle">
                     <input type="checkbox" checked={settings.translateNames !== false}
                       onChange={(e) => updateConfig({ translateNames: e.target.checked })} />
                     生成时自动翻译缺失的中文分组
                   </label>
+                  <details className="translation-options">
+                    <summary>翻译服务设置 <small>{({ mymemory: "MyMemory · 免密钥", youdao: "有道智云", baidu: "百度翻译", google: "Google Cloud Translation" })[translation.provider]}</small></summary>
                   <div className="translation-settings">
                     <label htmlFor="translation-provider">翻译服务
                       <select id="translation-provider" value={translation.provider}
@@ -681,6 +689,7 @@ export default function App() {
                       <p className="config-help">先导出配置，在其旁边创建 .env 并启动上述命令。浏览器可能需要允许本地网络访问，也可使用自己的 HTTPS 代理。</p>
                     </>}
                   </div>
+                  </details>
                   <p className="config-help">仅向所选服务发送缺失的分组名称，不发送接口、模型或请求体。成功映射保存在当前浏览器及下载配置中；已有映射优先复用。</p>
                   <div className="mapping-list">
                     {mappings.map(([tag, name], i) => (
@@ -710,13 +719,13 @@ export default function App() {
                     <button type="button" disabled={!mappingText.trim()} onClick={applyMappingText}>应用映射</button>
                   </details>
                 </details>
-                <details className="cli-settings">
-                  <summary>CLI 文件配置</summary>
+                <details className="settings-section cli-settings">
+                  <summary><span>CLI 与导出</span><small>文件路径、配置导入导出</small></summary>
                   <div className="settings-grid">
                     <label htmlFor="config-source">文档来源
                       <input id="config-source" value={settings.input} spellCheck={false}
                         onChange={(e) => updateConfig({ input: e.target.value })} placeholder="./openapi.json 或 JSON 链接" />
-                      <small>网页获取链接请使用左侧“获取 JSON”</small>
+                      <small>网页获取链接请使用左侧“连接设置”</small>
                     </label>
                     <label htmlFor="config-output">SDK 输出目录
                       <input id="config-output" value={settings.output} spellCheck={false}
@@ -724,8 +733,6 @@ export default function App() {
                       <small>CLI 路径相对于配置文件</small>
                     </label>
                   </div>
-                </details>
-                <p id="config-error" className="config-error" role="alert">{parsedConfig.error}</p>
                 <div className="config-actions">
                   <label className="import-file">导入配置<input type="file" accept=".json,application/json"
                     onChange={(e) => { void importConfig(e.target.files?.[0]); e.target.value = ""; }} /></label>
@@ -735,6 +742,8 @@ export default function App() {
                   <code>npx --package=@batype/chainspec chainspec --config chainspec.config.json</code>
                   <p>重复生成加 --update；仅替换未经手工修改的 CLI 生成目录。</p>
                 </details>
+                </details>
+                <p id="config-error" className="config-error" role="alert">{parsedConfig.error}</p>
               </section>
             </div>
           )}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "input": "https://example.com/api-json",
+  "output": "./src/api",
+  "namespace": "main",
+  "groupBy": "path",
+  "hooks": true,
+  "sourceRequest": {
+    "auth": {
+      "type": "basic",
+      "usernameEnv": "OPENAPI_USERNAME",
+      "passwordEnv": "OPENAPI_PASSWORD"
+    },
+    "headersEnv": {
+      "X-Tenant-ID": "OPENAPI_TENANT"
+    }
+  },
+  "controllerNames": {}
+}
