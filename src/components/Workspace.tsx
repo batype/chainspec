@@ -197,7 +197,7 @@ export default function Workspace({
       </div>
       <p className="download-profile-note" role="status">
         {SDK_TARGETS.find((item) => item.value === target)?.description} ·{" "}
-        {Object.keys(project.files).length} 个文件 · 预览、ZIP 与导出配置同步
+        {Object.keys(project.files).length} 个文件 · 预览、ZIP 与导出配置同步 <a className="workspace-guide-link" href={`#/guide?section=integration&target=${target}`}>查看接入步骤 →</a>
       </p>
       {!ready && (
         <p className="workspace-warning" role="status">

@@ -9,13 +9,15 @@ API.main.users.getUser.useRequest({path:{id:'42'}});
 
 React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。**不执行生成代码，不发送业务请求，不上传整份接口文档。可选自动翻译只发送缺失的分组名称。**
 
-[在线使用](https://batype.github.io/chainspec/) · [需求与设计](docs/design.md) · [支持边界](docs/limits.md) · [验证记录](docs/validation.md)
+[在线使用](https://batype.github.io/chainspec/) · [接入指南](https://batype.github.io/chainspec/#/guide) · [需求与设计](docs/design.md) · [支持边界](docs/limits.md) · [验证记录](docs/validation.md)
 
 ![ChainSpec](https://raw.githubusercontent.com/batype/chainspec/main/docs/preview-light.png)
 
 ## 网页工作台
 
-网页分为两个独立页面：在「配置与生成」导入 OpenAPI JSON、连接受保护文档并调整生成配置；点击「生成并进入工作台」后，在「SDK 工作台」选择接口、查看类型、接入示例、源码和诊断，选择技术栈后下载对应 SDK ZIP 或单个文件。返回配置不会丢失当前文档；接口或生成配置改动后需要重新生成才能导出，切换技术栈则即时同步预览与下载。
+网页分为配置、工作台和接入指南三个独立页面：在「配置与生成」导入 OpenAPI JSON、连接受保护文档并调整生成配置；点击「生成并进入工作台」后，在「SDK 工作台」选择接口、查看类型、接入示例、源码和诊断，选择技术栈后下载对应 SDK ZIP 或单个文件。返回配置不会丢失当前文档；接口或生成配置改动后需要重新生成才能导出，切换技术栈则即时同步预览与下载。
+
+独立「接入指南」解释项目用途、npm 生成器与业务 SDK 的区别，提供安装、配置、生成和重复更新步骤。按技术栈切换接入代码，并说明 request / Hooks、SSR、地址优先级、认证、翻译与本地开发。文档入口位于导航栏，工作台的「查看接入步骤」会带入当前技术栈；切换到指南不会清除当前生成结果。
 
 「交互体验」使用与生成 SDK 共用的 runtime 和 SWR Hook，搭配本地模拟适配器。可编辑并应用 params/body/headers，运行 `request`、切换 `useRequest` 自动请求或 `enabled: false`，体验 `trigger()`、`refresh()` 和错误处理，并观察 URL 组装与前后置钩子的执行顺序。响应从 Schema 合成，**不会请求你的业务接口**；示例值不等于 Schema 验证，复杂类型需手动补全。上传文件在此处仅以 JSON 占位值演示，不代表真实二进制上传。
 

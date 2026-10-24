@@ -5,6 +5,7 @@ import { SDK_TARGETS, selectSDKTarget } from "./core/targets";
 import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
 import Workspace from "./components/Workspace";
+import Guide from "./components/Guide";
 import SourceDialog from "./components/SourceDialog";
 import { sourceRequestOptions, type SourceRequestConfig } from "./core/source-config";
 import { DEFAULT_CONFIG, parseConfig, parseControllerNames, TRANSLATION_DEFAULTS, type ChainSpecConfig } from "./core/config";
@@ -279,18 +280,19 @@ export default function App() {
     return () => media.removeEventListener("change", apply);
   }, [theme]);
   const workspace = route.startsWith("#/workspace");
+  const guide = route.startsWith("#/guide") || route === "#guide";
   useEffect(() => {
     const onHash = () => setRoute(window.location.hash);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
   useEffect(() => {
-    document.title = workspace ? "SDK 工作台 · ChainSpec" : "ChainSpec · 配置与生成";
+    document.title = guide ? "接入指南 · ChainSpec" : workspace ? "SDK 工作台 · ChainSpec" : "ChainSpec · 配置与生成";
     window.scrollTo(0, 0);
-    if (workspace) document.getElementById("workspace-title")?.focus({ preventScroll: true });
-  }, [workspace]);
+    if (workspace || guide) document.getElementById(guide ? "guide-title" : "workspace-title")?.focus({ preventScroll: true });
+  }, [workspace, guide]);
   useEffect(() => {
-    if (["#guide", "#studio", "#top"].includes(route)) document.getElementById(route.slice(1))?.scrollIntoView();
+    if (["#studio", "#top"].includes(route)) document.getElementById(route.slice(1))?.scrollIntoView();
   }, [route]);
   const clear = () => {
     edits.current++;
@@ -353,9 +355,9 @@ export default function App() {
   };
   return (
     <>
-      <a className="skip" href={workspace ? "#workspace" : "#studio"} onClick={e => {
+      <a className="skip" href={guide ? "#guide-page" : workspace ? "#workspace" : "#studio"} onClick={e => {
         e.preventDefault();
-        const target = document.getElementById(workspace ? "workspace-title" : "studio");
+        const target = document.getElementById(guide ? "guide-title" : workspace ? "workspace-title" : "studio");
         target?.focus(); target?.scrollIntoView();
       }}>
         跳到主要内容
@@ -372,9 +374,9 @@ export default function App() {
           <span>从接口到调用</span>
         </a>
         <nav aria-label="主导航">
-          <a href="#/configure" aria-current={!workspace ? "page" : undefined}>配置与生成</a>
+          <a href="#/configure" aria-current={!workspace && !guide ? "page" : undefined}>配置与生成</a>
           <a href="#/workspace" aria-current={workspace ? "page" : undefined}>SDK 工作台</a>
-          <a href="#guide">接入指南</a>
+          <a href="#/guide" aria-current={guide ? "page" : undefined}>接入指南</a>
           <a
             href="https://github.com/batype/chainspec"
             target="_blank"
@@ -410,7 +412,7 @@ export default function App() {
       </dialog>
       {sourceOpen && <SourceDialog input={settings.input} request={settings.sourceRequest} loading={loadingUrl}
         onLoad={importUrl} onSave={saveConnection} onClose={closeConnection} />}
-      {workspace ? visibleResult ? <Workspace project={visibleResult} target={target} onTargetChange={changeTarget} documentText={generatedInput} route={route} ready={ready} onDownload={exportZip} /> : <main className="workspace-page workspace-empty" id="workspace"><span className="eyebrow">SDK WORKSPACE</span><h1 id="workspace-title" tabIndex={-1}>先生成，再体验。</h1><p>生成结果只保留在当前页面内存中。导入你的文档，或用内置示例生成一个 SDK。</p><a className="primary button-link" href="#/configure">前往配置与生成 →</a></main> : <main id="top">
+      {guide ? <Guide route={route} defaultTarget={target} /> : workspace ? visibleResult ? <Workspace project={visibleResult} target={target} onTargetChange={changeTarget} documentText={generatedInput} route={route} ready={ready} onDownload={exportZip} /> : <main className="workspace-page workspace-empty" id="workspace"><span className="eyebrow">SDK WORKSPACE</span><h1 id="workspace-title" tabIndex={-1}>先生成，再体验。</h1><p>生成结果只保留在当前页面内存中。导入你的文档，或用内置示例生成一个 SDK。</p><a className="primary button-link" href="#/configure">前往配置与生成 →</a></main> : <main id="top">
         <section className="hero">
           <div>
             <div className="eyebrow">
@@ -738,6 +740,7 @@ export default function App() {
             <span className="eyebrow">BUILT FOR YOUR WORKFLOW</span>
             <h2>类型、请求、缓存，各就各位。</h2>
             <p>下载的是能放进工程里的 TypeScript 源码。</p>
+            <a className="docs-text-link" href="#/guide">阅读完整接入指南 →</a>
           </div>
           <div className="guide-grid">
             <article>
