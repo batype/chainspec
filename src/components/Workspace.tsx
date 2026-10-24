@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import type { GeneratedProject } from "../core/model";
+import { SDK_TARGETS } from "../core/targets";
+import type { GeneratedProject, SDKTarget } from "../core/model";
 import { usage, type UsageEnvironment } from "../usage";
 import Code from "./Code";
 import Playground from "./Playground";
@@ -10,6 +11,8 @@ type Props = {
   route: string;
   ready: boolean;
   onDownload: () => void;
+  target: SDKTarget;
+  onTargetChange: (target: SDKTarget) => void;
 };
 const views = [
   "playground",
@@ -28,13 +31,49 @@ export default function Workspace({
   route,
   ready,
   onDownload,
+  target,
+  onTargetChange,
 }: Props) {
   const query = new URLSearchParams(route.split("?")[1] ?? "");
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(0),
     [mode, setMode] = useState<"request" | "hook">("request"),
     [notice, setNotice] = useState(""),
-    [environment, setEnvironment] = useState<UsageEnvironment>("universal");
+    [chosenEnvironment, setEnvironment] =
+      useState<UsageEnvironment>("universal");
+  const targetEnvironments: UsageEnvironment[] =
+    target === "node"
+      ? ["node"]
+      : target === "browser"
+        ? ["universal"]
+        : target === "react"
+          ? ["react"]
+          : target === "next"
+            ? [
+                "next-server",
+                ...(project.files["react.ts"] ? ["next-client" as const] : []),
+              ]
+            : target === "vite-ssr"
+              ? [
+                  "vite-ssr",
+                  ...(project.files["react.ts"] ? ["react" as const] : []),
+                ]
+              : [
+                  "universal",
+                  "node",
+                  "react",
+                  "next-server",
+                  "next-client",
+                  "vite-ssr",
+                ];
+  const environments = targetEnvironments.filter(
+    (item) =>
+      project.files["react.ts"] || !["react", "next-client"].includes(item),
+  );
+  const environment = environments.includes(chosenEnvironment)
+    ? chosenEnvironment
+    : environments[0];
+  const targetLabel = SDK_TARGETS.find((item) => item.value === target)!.label;
   const serverExample = ["node", "next-server", "vite-ssr"].includes(
     environment,
   );
@@ -47,7 +86,8 @@ export default function Workspace({
     project.operations.find((op) => op.id === query.get("op")) ?? fallback;
   const view =
     views.includes(query.get("tab") as View) &&
-    (hooks || query.get("tab") !== "react.ts")
+    (["playground", "usage", "diagnostics"].includes(query.get("tab") ?? "") ||
+      Object.hasOwn(project.files, query.get("tab") ?? ""))
       ? (query.get("tab") as View)
       : "playground";
   const document = useMemo(() => {
@@ -103,7 +143,7 @@ export default function Workspace({
     link.href = url;
     link.download =
       view === "usage"
-        ? "example.ts"
+        ? `example-${target}.ts`
         : view === "diagnostics"
           ? "diagnostics.json"
           : view;
@@ -122,18 +162,43 @@ export default function Workspace({
             SDK 工作台 <span>生成之后，立即体验。</span>
           </h1>
         </div>
-        <button
-          type="button"
-          className="primary"
-          disabled={!ready}
-          onClick={() => {
-            onDownload();
-            setNotice("SDK 已下载，包含完整源码、类型、配置与使用说明。");
-          }}
-        >
-          ↓ 下载完整 SDK <span>.zip</span>
-        </button>
+        <div className="workspace-download">
+          <label htmlFor="download-target">
+            下载技术栈
+            <select
+              id="download-target"
+              value={target}
+              onChange={(e) => {
+                setNotice("");
+                onTargetChange(e.target.value as SDKTarget);
+              }}
+            >
+              {SDK_TARGETS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="primary"
+            disabled={!ready}
+            onClick={() => {
+              onDownload();
+              setNotice(
+                `${targetLabel} SDK 已下载；ZIP 与 CLI 配置使用同一技术栈。`,
+              );
+            }}
+          >
+            ↓ 下载 {targetLabel} <span>.zip</span>
+          </button>
+        </div>
       </div>
+      <p className="download-profile-note" role="status">
+        {SDK_TARGETS.find((item) => item.value === target)?.description} ·{" "}
+        {Object.keys(project.files).length} 个文件 · 预览、ZIP 与导出配置同步
+      </p>
       {!ready && (
         <p className="workspace-warning" role="status">
           输入或配置已有改动，当前展示上一次生成的结果。
@@ -233,7 +298,11 @@ export default function Workspace({
         <section className="workspace-content" aria-label="SDK 体验与源码">
           <nav className="workspace-tabs" aria-label="工作台视图">
             {views
-              .filter((tab) => hooks || tab !== "react.ts")
+              .filter(
+                (tab) =>
+                  ["playground", "usage", "diagnostics"].includes(tab) ||
+                  Object.hasOwn(project.files, tab),
+              )
               .map((tab) => (
                 <a
                   key={tab}
@@ -295,14 +364,28 @@ export default function Workspace({
                         setEnvironment(e.target.value as UsageEnvironment)
                       }
                     >
-                      <option value="universal">通用 / Vite</option>
-                      <option value="node">Node.js</option>
-                      {hooks && <option value="react">React / Vite SPA</option>}
-                      <option value="next-server">Next.js 服务端</option>
-                      {hooks && (
-                        <option value="next-client">Next.js 客户端组件</option>
-                      )}
-                      <option value="vite-ssr">Vite SSR 服务端取数</option>
+                      {environments
+                        .filter(
+                          (item) =>
+                            hooks || !["react", "next-client"].includes(item),
+                        )
+                        .map((item) => (
+                          <option key={item} value={item}>
+                            {
+                              {
+                                universal: "通用 / Vite",
+                                node: "Node.js",
+                                react:
+                                  target === "vite-ssr"
+                                    ? "Vite SSR 客户端组件"
+                                    : "React / Vite SPA",
+                                "next-server": "Next.js 服务端",
+                                "next-client": "Next.js 客户端组件",
+                                "vite-ssr": "Vite SSR 服务端取数",
+                              }[item]
+                            }
+                          </option>
+                        ))}
                     </select>
                   </label>
                 )}
@@ -369,7 +452,7 @@ export default function Workspace({
               )}
               <div className="preview-actions">
                 <span>
-                  下载包包含完整源码与配置；类型用于编译检查，不代表运行时校验。
+                  下载包包含当前技术栈的源码与配置；类型用于编译检查，不代表运行时校验。
                 </span>
               </div>
             </div>

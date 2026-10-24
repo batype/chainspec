@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { zipSync, strToU8 } from "fflate";
-import type { GeneratedProject, GeneratorOptions } from "./core/model";
+import type { GeneratedProject, GeneratorOptions, SDKTarget } from "./core/model";
+import { SDK_TARGETS, selectSDKTarget } from "./core/targets";
 import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
 import Workspace from "./components/Workspace";
@@ -10,11 +11,16 @@ import { DEFAULT_CONFIG, parseConfig, parseControllerNames, TRANSLATION_DEFAULTS
 import { fetchDocument } from "./core/source";
 const namesCacheKey = "chainspec-controller-names-v1";
 function cachedConfig() {
-  try { return { ...DEFAULT_CONFIG, controllerNames: parseControllerNames(JSON.parse(localStorage.getItem(namesCacheKey) ?? "{}")) }; }
-  catch { return DEFAULT_CONFIG; }
+  try { return { ...DEFAULT_CONFIG, target: "react" as const, controllerNames: parseControllerNames(JSON.parse(localStorage.getItem(namesCacheKey) ?? "{}")) }; }
+  catch { return { ...DEFAULT_CONFIG, target: "react" as const }; }
 }
 const defaultConfigText = JSON.stringify(cachedConfig(), null, 2);
 type Theme = "system" | "light" | "dark";
+function generationKey(input: string, configText: string) {
+  const config = JSON.parse(configText);
+  delete config.target; delete config.hooks;
+  return JSON.stringify([input, config]);
+}
 function download(
   bytes: BlobPart,
   name: string,
@@ -78,7 +84,7 @@ export default function App() {
   // Keep draft field values visible even while validation reports an error.
   const settings = useMemo(() => JSON.parse(configText) as ChainSpecConfig, [configText]);
   const updateConfig = (patch: Partial<ChainSpecConfig>) => {
-    if (busy) cancelGeneration();
+    if (busy && Object.keys(patch).some(key => key !== "target" && key !== "hooks")) cancelGeneration();
     setConfigText((previous) => JSON.stringify({ ...JSON.parse(previous), ...patch }, null, 2));
     setError("");
     setNotice("");
@@ -126,12 +132,16 @@ export default function App() {
       setNotice("JSON 配置已复制，可用于 CLI。");
     } catch { setNotice("复制失败，请导出配置文件或手动复制。"); }
   };
-  const stateKey = JSON.stringify([input, configText]);
+  const target = settings.target ?? "all";
+  const visibleResult = useMemo(() => result ? selectSDKTarget(result, target, { hooks: settings.hooks !== false }) : null, [result, target, settings.hooks]);
+  const changeTarget = (value: SDKTarget) => updateConfig({ target: value, hooks: value !== "node" && value !== "browser" });
+  const stateKey = generationKey(input, configText);
   const dirty = stateKey !== submitted;
-  const ready = Boolean(result) && !dirty && !busy && !error;
+  const ready = Boolean(result) && !dirty && !busy && !error && !parsedConfig.error;
   const options = (): GeneratorOptions => {
     const { version, input, output, sourceRequest, ...opts } = parseConfig(configText);
-    return opts;
+    // Keep a complete local result so switching output targets never refetches or retranslates the spec.
+    return { ...opts, target: "all", hooks: true };
   };
   const setSource = (source: string) => setConfigText((previous) => {
     try { return JSON.stringify({ ...parseConfig(previous), input: source }, null, 2); }
@@ -228,10 +238,10 @@ export default function App() {
       }
       if (data.result) {
         const sent = pendingGeneration.current;
-        if (sent.id === data.id && currentState.current.input === sent.input && currentState.current.configText === sent.configText) {
-          const next = JSON.stringify({ ...JSON.parse(sent.configText), controllerNames: data.result.controllerNames }, null, 2);
+        if (sent.id === data.id && currentState.current.input === sent.input && generationKey(currentState.current.input, currentState.current.configText) === generationKey(sent.input, sent.configText)) {
+          const next = JSON.stringify({ ...JSON.parse(currentState.current.configText), controllerNames: data.result.controllerNames }, null, 2);
           setConfigText(next);
-          setSubmitted(JSON.stringify([sent.input, next]));
+          setSubmitted(generationKey(sent.input, next));
           try { localStorage.setItem(namesCacheKey, JSON.stringify(data.result.controllerNames)); } catch {}
         }
         const failed = data.result.diagnostics.some(d => d.code.startsWith("translation-"));
@@ -334,21 +344,12 @@ export default function App() {
     }
   };
   const exportZip = () => {
-    if (!ready || !result) return;
-    const entries = Object.fromEntries(
-      Object.entries(result.files).map(([name, text]) => [
-        `sdk/${name}`,
-        strToU8(text),
-      ]),
-    );
-    entries["chainspec.config.json"] = strToU8(JSON.stringify(parseConfig(configText), null, 2));
-    entries["controller-names.json"] = strToU8(JSON.stringify(result.controllerNames, null, 2));
-    download(
-      zipSync(entries, { level: 6 }).slice().buffer,
-      "chainspec-sdk.zip",
-      "application/zip",
-    );
-    setNotice("SDK已下载，包含完整类型、运行时、诊断和使用说明。");
+    if (!ready || !visibleResult) return;
+    const entries = Object.fromEntries(Object.entries(visibleResult.files).map(([name, text]) => [`sdk/${name}`, strToU8(text)]));
+    entries["chainspec.config.json"] = strToU8(JSON.stringify({ ...parseConfig(configText), target, hooks: Boolean(visibleResult.files["react.ts"]) }, null, 2));
+    entries["controller-names.json"] = strToU8(JSON.stringify(visibleResult.controllerNames, null, 2));
+    download(zipSync(entries, { level: 6 }).slice().buffer, `chainspec-sdk-${target}.zip`, "application/zip");
+    setNotice(`${SDK_TARGETS.find(item => item.value === target)?.label} SDK 已下载。`);
   };
   return (
     <>
@@ -409,7 +410,7 @@ export default function App() {
       </dialog>
       {sourceOpen && <SourceDialog input={settings.input} request={settings.sourceRequest} loading={loadingUrl}
         onLoad={importUrl} onSave={saveConnection} onClose={closeConnection} />}
-      {workspace ? result ? <Workspace project={result} documentText={generatedInput} route={route} ready={ready} onDownload={exportZip} /> : <main className="workspace-page workspace-empty" id="workspace"><span className="eyebrow">SDK WORKSPACE</span><h1 id="workspace-title" tabIndex={-1}>先生成，再体验。</h1><p>生成结果只保留在当前页面内存中。导入你的文档，或用内置示例生成一个 SDK。</p><a className="primary button-link" href="#/configure">前往配置与生成 →</a></main> : <main id="top">
+      {workspace ? visibleResult ? <Workspace project={visibleResult} target={target} onTargetChange={changeTarget} documentText={generatedInput} route={route} ready={ready} onDownload={exportZip} /> : <main className="workspace-page workspace-empty" id="workspace"><span className="eyebrow">SDK WORKSPACE</span><h1 id="workspace-title" tabIndex={-1}>先生成，再体验。</h1><p>生成结果只保留在当前页面内存中。导入你的文档，或用内置示例生成一个 SDK。</p><a className="primary button-link" href="#/configure">前往配置与生成 →</a></main> : <main id="top">
         <section className="hero">
           <div>
             <div className="eyebrow">
@@ -567,6 +568,12 @@ export default function App() {
                 <details className="settings-section common-settings" open>
                   <summary><span>常用配置</span><small>调用方式与服务地址</small></summary>
                 <div className="settings-grid">
+                  <label htmlFor="config-target" className="target-field">SDK 技术栈
+                    <select id="config-target" value={target} onChange={e => changeTarget(e.target.value as SDKTarget)}>
+                      {SDK_TARGETS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                    <small>{SDK_TARGETS.find(item => item.value === target)?.description}</small>
+                  </label>
                   <label htmlFor="config-namespace">命名空间
                     <input id="config-namespace" value={settings.namespace ?? "main"} spellCheck={false}
                       onChange={(e) => updateConfig({ namespace: e.target.value })} placeholder="main" />
@@ -592,12 +599,12 @@ export default function App() {
                     <small>留空则使用文档默认地址</small>
                   </label>
                 </div>
-                <label className="check">
+                {["all", "next", "vite-ssr"].includes(target) ? <label className="check">
                   <input type="checkbox" checked={settings.hooks !== false}
                     onChange={(e) => updateConfig({ hooks: e.target.checked })} />
                   <span><strong>生成 SWR Hooks</strong><small>默认自动请求 · 支持手动触发</small></span>
                   <span className="swr-mark">SWR ↗</span>
-                </label>
+                </label> : <p className="target-hint">{target === "react" ? "包含 request 与 SWR Hooks；默认自动请求，可配置手动触发。" : "此技术栈仅包含 request，不引入 React 或 SWR。"}</p>}
                 </details>
                 <details className="settings-section mapping-settings">
                   <summary><span>分组命名</span><small>{mappings.length} 条映射 · {settings.translateNames !== false ? "自动翻译" : "离线命名"}</small></summary>

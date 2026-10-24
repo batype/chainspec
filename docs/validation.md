@@ -104,3 +104,11 @@ npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理�
 - CLI --update 的额外文件保护保持；SDK 内产生 dist 后会被视为额外文件，持续生成场景按环境指南把 --outDir 设置到生成目录之外，或使用新的输出目录。不会为适配构建而放宽覆盖保护。
 
 - 最终 npm test 43 项通过，生产构建及项目外 32 文件 tarball 的离线安装、Node API、CLI 版本检查通过。
+
+## 3.2 按技术栈生成、预览和下载
+
+- 网页默认 React / Vite，配置表单与工作台共用 target；支持 Node.js、通用浏览器、React / Vite、Next.js、Vite React SSR 与完整 SDK 兼容模式。切换 target / Hooks 复用完整的页面内存结果，不重新获取、解析或翻译。修改命名空间仍会停用旧结果的下载。
+- `npm test` 49 项全部通过，保留原 43 项回归。新增 6 项覆盖文件与依赖闭包、包导出、清单、网页筛选和直接生成的逐字节一致性；五个技术栈实际编译并运行 request；GET/POST-only README 示例严格类型检查；非法 target / React 无 Hooks 在联网前拒绝；CLI 参数覆盖配置、切换技术栈更新及手改文件保护。
+- `npm run build` 与 `git diff --check` 通过。请求与 Hook 模板未修改。CLI / Node API 省略 target 时保持 all；Node / browser 自动不生成 React 文件或依赖；Next / Vite SSR 同时保留本技术栈需要的服务端与客户端入口。
+- 浏览器实际下载 Node、React、Next ZIP，并用包内配置、同一合成文档运行 CLI，SDK 文件内容逐字节一致。工作台只显示所选入口与环境示例，JSON 配置随选择同步。390×844 手机暗色与桌面亮色检查通过，下载控件在窄屏纵向排列；临时视口已重置，浏览器无警告或错误日志。未调用业务接口。
+- npm tarball 检查 35 文件，只含生成器、文档及空白配置示例；在项目外独立离线安装，公开 API 的所有 target 和已安装 CLI 的 Node 生成验证通过。注册表发布状态以正式发布结果为准。

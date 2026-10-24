@@ -5,7 +5,9 @@ export type Diagnostic = {
   message: string;
   location?: string;
 };
+export type SDKTarget = "all" | "node" | "browser" | "react" | "next" | "vite-ssr";
 export type GeneratorOptions = {
+  target?: SDKTarget;
   namespace?: string;
   groupBy?: "path" | "tag";
   stripPrefix?: string;
@@ -49,6 +51,7 @@ export type Operation = {
   security: unknown;
 };
 export type GeneratedProject = {
+  target?: SDKTarget;
   title: string;
   version: string;
   namespace: string;

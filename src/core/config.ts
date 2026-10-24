@@ -1,3 +1,4 @@
+import { resolveSDKOptions } from "./targets.js";
 import type { GeneratorOptions, TranslationConfig } from "./model.js";
 import { parseSourceRequest, type SourceRequestConfig } from "./source-config.js";
 
@@ -14,6 +15,7 @@ export const DEFAULT_CONFIG: ChainSpecConfig = {
   output: "./src/api",
   namespace: "main",
   groupBy: "path",
+  target: "all",
   hooks: true,
   controllerNames: {},
   translateNames: true,
@@ -21,7 +23,7 @@ export const DEFAULT_CONFIG: ChainSpecConfig = {
 };
 const keys = new Set([
   "version", "input", "output", "namespace", "groupBy", "stripPrefix",
-  "controllerNames", "baseUrl", "hooks", "translateNames", "translation", "sourceRequest",
+  "controllerNames", "baseUrl", "hooks", "translateNames", "translation", "sourceRequest", "target",
 ]);
 export function parseConfig(input: string | unknown): ChainSpecConfig {
   let value: any = input;
@@ -44,6 +46,7 @@ export function parseConfig(input: string | unknown): ChainSpecConfig {
     throw new Error("命名空间需为英文标识符");
   if (value.groupBy !== undefined && !["path", "tag"].includes(value.groupBy))
     throw new Error("groupBy 必须为 path 或 tag");
+  resolveSDKOptions(value);
   if (value.hooks !== undefined && typeof value.hooks !== "boolean")
     throw new Error("hooks 必须为布尔值");
   if (value.translateNames !== undefined && typeof value.translateNames !== "boolean")

@@ -15,7 +15,7 @@ React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。*
 
 ## 网页工作台
 
-网页分为两个独立页面：在「配置与生成」导入 OpenAPI JSON、连接受保护文档并调整生成配置；点击「生成并进入工作台」后，在「SDK 工作台」选择接口、查看类型、接入示例、源码和诊断，下载完整 SDK 或单个文件。返回配置不会丢失当前文档；配置改动后需要重新生成才能导出。
+网页分为两个独立页面：在「配置与生成」导入 OpenAPI JSON、连接受保护文档并调整生成配置；点击「生成并进入工作台」后，在「SDK 工作台」选择接口、查看类型、接入示例、源码和诊断，选择技术栈后下载对应 SDK ZIP 或单个文件。返回配置不会丢失当前文档；接口或生成配置改动后需要重新生成才能导出，切换技术栈则即时同步预览与下载。
 
 「交互体验」使用与生成 SDK 共用的 runtime 和 SWR Hook，搭配本地模拟适配器。可编辑并应用 params/body/headers，运行 `request`、切换 `useRequest` 自动请求或 `enabled: false`，体验 `trigger()`、`refresh()` 和错误处理，并观察 URL 组装与前后置钩子的执行顺序。响应从 Schema 合成，**不会请求你的业务接口**；示例值不等于 Schema 验证，复杂类型需手动补全。上传文件在此处仅以 JSON 占位值演示，不代表真实二进制上传。
 
@@ -23,7 +23,7 @@ React + Vite本地生成器，普通Node/browser SDK与React/SWR入口分开。*
 
 ## 一次完整流程
 
-导入文件、粘贴JSON或从URL获取 → 填写配置表单 → 生成 → 搜索接口并预览调用、类型与诊断 → 下载完整SDK ZIP。输入与配置改动后，旧结果暂停复制/下载。输入面板可以折叠。支持亮色、暗色、系统主题和手机布局。
+导入文件、粘贴JSON或从URL获取 → 填写配置表单 → 生成 → 搜索接口并预览调用、类型与诊断 → 选择技术栈 → 下载对应 SDK ZIP。输入与生成配置改动后，旧结果暂停复制/下载；仅切换技术栈或 Hooks 时无需重新解析、获取或翻译文档。输入面板可以折叠。支持亮色、暗色、系统主题和手机布局。
 
 支持Swagger2.0、OpenAPI3.0/3.1 JSON的常见子集，本地引用、递归模型、枚举、组合类型、参数与JSON/平面表单。没有模型的响应使用unknown并提示；不是完整的OpenAPI或JSON Schema实现。远程引用、YAML和Swagger UI HTML需先转换。
 
@@ -53,7 +53,18 @@ const deferred=API.main.users.createUser.useRequest({}, undefined, {enabled:fals
 
 ## 环境与入口
 
-同一份生成 SDK 按入口区分运行环境，不用重复生成：
+3.2 起可按技术栈生成对应的文件、依赖、构建配置和 README；网页默认 React / Vite，工作台右上角可即时切换。CLI 与 Node API 未指定 `target` 时仍采用 `all`，保留已有完整 SDK 行为。
+
+| target | 输出内容 |
+| --- | --- |
+| `node` | 仅 request、Node 入口与类型；无 React / SWR 文件或依赖 |
+| `browser` | 浏览器 request 入口；适合普通 Vite、Vue、Svelte |
+| `react` | React / Vite 入口，request + Hooks；不附带独立 Node 入口 |
+| `next` | Next.js 服务端 request 与客户端 Hooks、构建配置 |
+| `vite-ssr` | Vite React SSR 服务端与客户端入口、首屏数据示例 |
+| `all` | 完整入口与所有环境指南，兼容已有项目 |
+
+`node` / `browser` 自动关闭 Hooks；`react` 必须开启 Hooks，搭配 `--no-hooks` 会提示改选 Node / browser。`next` / `vite-ssr` 可关闭 Hooks，仅生成服务端请求层。以下入口仅在对应目标中提供：
 
 | 环境 | 生成结果中的入口 | 调用方式 |
 | --- | --- | --- |
@@ -66,7 +77,7 @@ const deferred=API.main.users.createUser.useRequest({}, undefined, {enabled:fals
 
 Next.js Server Component 不能调用 Hook；Client Component 仍可能在服务端预渲染。服务端用 request 预取，再将可序列化数据交给 React 的 swr.fallbackData，按需要关闭首屏重复校验。SSR 为每个请求/渲染树创建独立客户端和缓存，不能共享用户认证。生成入口保留 use client 边界，不在通用入口引入 React。
 
-附带独立 Node / React 构建配置及可选 peerDependencies；Next.js 使用编译产物，兼容默认 Turbopack 的模块解析。Node-only 构建不会解析 React 入口。新增 `fetch` 配置可包装 Next.js 的 fetch 缓存策略，同时保留 SDK 序列化与拦截器。`request` 自定义适配器优先。完整步骤及 Next.js、Vite SSR 示例见 [环境接入指南](docs/environments.md)，也随下载 SDK 附带 `ENVIRONMENTS.md`。
+指定技术栈附带单一 `tsconfig.json`、必要依赖与针对该目标的 README；`all` 模式保留独立 Node / React 构建配置及可选 peerDependencies。Next.js 使用编译产物，兼容默认 Turbopack 的模块解析。Node-only 构建不会解析 React 入口。新增 `fetch` 配置可包装 Next.js 的 fetch 缓存策略，同时保留 SDK 序列化与拦截器。`request` 自定义适配器优先。完整步骤及 Next.js、Vite SSR 示例见 [环境接入指南](docs/environments.md)，`all` 下载包附带 `ENVIRONMENTS.md`，其他目标只附带自身的 README。
 
 注意：npm 的 `@batype/chainspec` 是生成器；`sdk/node.js` 与 `sdk/react.js` 是生成结果的本地入口。原有 `@batype/chainspec/node` 为生成器的翻译适配器，不是业务 SDK。
 
@@ -178,13 +189,13 @@ CLI支持本地JSON、HTTP(S) JSON链接和配置文件。默认创建新目录�
 
 ```sh
 npm run build:core
-node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --strip-prefix /v1/api
+node bin/chainspec.mjs --in openapi.json --out ./new-sdk --target node --namespace main --strip-prefix /v1/api
 # --group-by tag / --base-url URL / --no-hooks
 ```
 
 ### 一份 JSON 配置，网页与代码库共用
 
-网页配置分为“常用配置”“分组命名”“CLI 与导出”，默认只展开常用项。翻译服务设置在“分组命名”内按需展开。点击旁边“查看配置”可预览、复制JSON；支持配置导入/导出，导入后回填表单。完整SDK ZIP也包含`chainspec.config.json`。配置格式版本`version: 1`与生成器npm版本独立。
+网页配置分为“常用配置”“分组命名”“CLI 与导出”，默认只展开常用项。翻译服务设置在“分组命名”内按需展开。点击旁边“查看配置”可预览、复制JSON；支持配置导入/导出，导入后回填表单。每个技术栈的 SDK ZIP 都包含选中的 `target` 和 `chainspec.config.json`；在项目中补充对应 input 文档后，可直接用 CLI 复现生成。配置格式版本`version: 1`与生成器npm版本独立。
 
 ```json
 {
@@ -192,6 +203,7 @@ node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --stri
   "input": "https://example.com/api-json",
   "output": "./src/api",
   "namespace": "main",
+  "target": "react",
   "groupBy": "tag",
   "hooks": true,
   "controllerNames": {
@@ -201,13 +213,17 @@ node bin/chainspec.mjs --in openapi.json --out ./new-sdk --namespace main --stri
 ```
 
 ```sh
-npm install -D @batype/chainspec@^3.0.0
+npm install -D @batype/chainspec@^3.2.0
 npx chainspec --config chainspec.config.json
 # 接口更新后重新生成：
 npx chainspec --config chainspec.config.json --update
 # 也可直接从链接生成：
-npx chainspec --in https://example.com/api-json --out ./new-sdk
+npx chainspec --in https://example.com/api-json --out ./new-sdk --target node
+# 临时覆盖配置中的技术栈：
+npx chainspec --config chainspec.config.json --target next --out ./next-sdk
 ```
+
+不安装到项目时也可执行 `npx --yes --package=@batype/chainspec@latest chainspec --config chainspec.config.json --target node`。Node API 同样支持 `generateSDK(document, { target: "node" })`，输出内容与网页一致。技术栈配置模板见 [target.config.json](examples/target.config.json)。
 
 加入你项目的package.json：`"sdk:generate": "chainspec --config chainspec.config.json --update"`，以后执行`npm run sdk:generate`即可。
 

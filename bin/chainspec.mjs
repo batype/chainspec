@@ -4,7 +4,7 @@ import { resolve, dirname, basename, join } from "node:path";
 import { loadEnvFile } from "node:process";
 import { createNodeTranslator } from "./translation-provider.mjs";
 import { createHash, randomUUID } from "node:crypto";
-import { generateSDKAsync, parseConfig, parseControllerNames, fetchDocument, sourceRequestOptions, MAX_BYTES, VERSION } from "../lib/core/index.js";
+import { generateSDKAsync, parseConfig, parseControllerNames, fetchDocument, sourceRequestOptions, MAX_BYTES, VERSION, resolveSDKOptions } from "../lib/core/index.js";
 const args = process.argv.slice(2), opts = {};
 const marker = ".chainspec-generated.json";
 const digest = text => createHash("sha256").update(text).digest("hex");
@@ -25,7 +25,7 @@ try {
     await runTranslationServer(args.slice(1));
   } else {
   if (args.includes("--help") || !args.length) {
-    console.log("chainspec --config chainspec.config.json [--update] [--no-translate] [--env-file .env]\nchainspec translate-server --config chainspec.config.json [--env-file .env] [--origin https://batype.github.io]\nchainspec --in openapi.json|https://example.com/api-json --out ./new-sdk [--namespace main] [--strip-prefix /v1/api] [--group-by path|tag] [--base-url URL] [--no-hooks]\nPaths in JSON resolve relative to the config file; explicit CLI flags override JSON.\nCreates a new directory. --update replaces only an unchanged CLI-generated directory.");
+    console.log("chainspec --config chainspec.config.json [--update] [--no-translate] [--env-file .env]\nchainspec translate-server --config chainspec.config.json [--env-file .env] [--origin https://batype.github.io]\nchainspec --in openapi.json|https://example.com/api-json --out ./new-sdk [--namespace main] [--strip-prefix /v1/api] [--group-by path|tag] [--base-url URL] [--no-hooks] [--target node|browser|react|next|vite-ssr|all]\nPaths in JSON resolve relative to the config file; explicit CLI flags override JSON.\nCreates a new directory. --update replaces only an unchanged CLI-generated directory.");
     process.exit(0);
   }
   if (args.includes("--version")) { console.log(VERSION); process.exit(0); }
@@ -35,7 +35,7 @@ try {
     if (flag === "--update") { update = true; continue; }
     if (flag === "--translate") { opts.translateNames = true; continue; }
     if (flag === "--no-translate") { opts.translateNames = false; continue; }
-    if (!["--env-file", "--config", "--in", "--out", "--namespace", "--strip-prefix", "--group-by", "--base-url"].includes(flag))
+    if (!["--env-file", "--config", "--in", "--out", "--namespace", "--strip-prefix", "--group-by", "--base-url", "--target"].includes(flag))
       throw Error("Unknown option; use --help");
     const val = args[++i];
     if (!val || val.startsWith("--")) throw Error("Missing option value");
@@ -43,7 +43,7 @@ try {
     else if (flag === "--config") configPath = resolve(val);
     else if (flag === "--in") inputPath = val;
     else if (flag === "--out") output = val;
-    else opts[{"--namespace":"namespace", "--strip-prefix":"stripPrefix", "--group-by":"groupBy", "--base-url":"baseUrl"}[flag]] = val;
+    else opts[{"--target":"target", "--namespace":"namespace", "--strip-prefix":"stripPrefix", "--group-by":"groupBy", "--base-url":"baseUrl"}[flag]] = val;
   }
   const configText = configPath ? await localJSON(configPath) : undefined;
   const config = configText ? parseConfig(configText) : undefined;
@@ -52,6 +52,7 @@ try {
   const destination = output ? resolve(output) : config ? resolve(base, config.output) : undefined;
   if (!source || !destination) throw Error("--in and --out, or --config, are required");
   const settings = { ...config, ...opts };
+  resolveSDKOptions(settings);
   if (settings.groupBy && !["path", "tag"].includes(settings.groupBy)) throw Error("--group-by must be path or tag");
   if (envPath) loadEnvFile(envPath);
   else if (configPath) {

@@ -1898,3 +1898,12 @@ main.workspace-page { max-width:1680px; padding:28px 32px 40px; }
 }
 .environment-picker { display:flex; align-items:center; gap:8px; font-size:10px; color:#a7b4c9; }
 .environment-picker select { background:#263141; color:#e2e7f0; border-color:#455269; font-size:11px; max-width:210px; }
+.target-field { grid-column:1/-1; }
+.target-hint { font-size:11px; line-height:1.8; padding:14px; color:var(--muted); background:var(--soft); border-radius:7px; margin:16px 0 0; }
+.workspace-download { display:flex; align-items:flex-end; gap:12px; }
+.workspace-download label { display:flex; flex-direction:column; gap:8px; font-size:11px; color:var(--muted); }
+.workspace-download select { min-width:170px; padding:10px; font-size:12px; }
+.workspace-download button { white-space:nowrap; font-size:12px; }
+.download-profile-note { color:var(--muted); font-size:11px; line-height:1.8; margin:-8px 0 20px; }
+@media(max-width:760px) { .workspace-heading { flex-wrap:wrap; } .workspace-download { flex-basis:100%; align-items:flex-end; } .workspace-download label { flex:1; min-width:0; } .workspace-download select { min-width:0; width:100%; } .workspace-download button { font-size:11px; padding:11px; } .download-profile-note { margin-top:0; } }
+@media(max-width:480px) { .workspace-download { flex-direction:column; align-items:stretch; width:100%; } .workspace-download label, .workspace-download button { width:100%; } }

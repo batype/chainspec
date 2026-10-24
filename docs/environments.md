@@ -1,6 +1,6 @@
 # SDK 环境接入
 
-同一份生成结果包含通用请求层和可选 React 层，不需要为每个框架生成一套接口类型。以下 `main.users.getUser`、`User` 来自合成示例，接入时使用自己生成的操作名与类型。`@batype/chainspec` 是生成器；下面的 `sdk/node.js`、`sdk/react.js` 是生成结果的本地入口，不能写成 `@batype/chainspec/react`。生成器原有的 `@batype/chainspec/node` 是翻译适配器，含义不同。
+3.2 起先选择 `target`，只生成所选技术栈需要的入口、依赖、构建配置与 README。支持 `node`、`browser`、`react`、`next`、`vite-ssr`；`all` 为兼容模式，包含本指南中的完整入口。CLI 配置和 `--target` 共用同一组选项，未指定时保持 `all`。网页工作台右上角可切换技术栈，预览和 ZIP 同步。以下 `main.users.getUser`、`User` 来自合成示例，接入时使用自己生成的操作名与类型。`@batype/chainspec` 是生成器；下面的 `sdk/node.js`、`sdk/react.js` 是生成结果的本地入口，不能写成 `@batype/chainspec/react`。生成器原有的 `@batype/chainspec/node` 是翻译适配器，含义不同。
 
 | 场景 | 生成 SDK 入口 | 创建客户端 | 调用 |
 | --- | --- | --- | --- |
@@ -16,11 +16,13 @@
 
 - 通用入口不导入 React 或 SWR。推荐 Node 22+，使用原生 Fetch、Headers、FormData、Blob；Node 需要绝对 `baseUrl`，例如 `https://api.example.com`，不会自动推断当前请求的 origin。
 - 生成的是 TypeScript 源码，工程可用 `moduleResolution: "Bundler"`（Vite/Next.js）或 `"NodeNext"`（Node ESM）。源码中的 `.js` 路径由 TypeScript/打包器映射到对应 `.ts`。Node ESM 可用 `tsc` 编译后运行；不要求 Node 直接运行这些 `.ts` 文件。CommonJS 工程可用自己的 TypeScript 构建配置，不提供单独的预编译 CJS 文件。
-- React 入口需要应用安装 React 和 SWR 2，验证版本为 React 19 / SWR 2.5。`hooks: false` / `--no-hooks` 仅输出通用入口，不输出 React 入口。保留 `index.ts` 的现有接入方式。
+- React 入口需要应用安装 React 和 SWR 2，验证版本为 React 19 / SWR 2.5。`node` / `browser` 自动不输出 React 入口；`react` 必须启用 Hooks。`next` / `vite-ssr` / `all` 可用 `hooks: false` / `--no-hooks` 只输出请求层。React 目标的 `index.ts` 导出 createReactAPI；其余目标的 `index.ts` 导出 createAPI。
 
 ## 独立构建：Next.js 默认 Turbopack / Node ESM
 
-生成目录附带私有 `package.json`、`tsconfig.node.json`，开启 Hooks 时另有 `tsconfig.react.json`。使用应用已安装的 TypeScript 也可直接构建：
+指定技术栈时，生成目录附带私有 `package.json` 和单一 `tsconfig.json`：使用 `npx tsc -p ./src/api/tsconfig.json` 或在 SDK 目录运行 `npm run build`。React / Next.js / Vite React SSR 启用 Hooks 时依赖 React / SWR；Node / browser 不包含这些依赖。
+
+以下为 `target: "all"` 兼容模式的独立构建方式：附带 `tsconfig.node.json`，开启 Hooks 时另有 `tsconfig.react.json`。使用应用已安装的 TypeScript 也可直接构建：
 
 ```sh
 # 在应用根目录：纯 Node / 服务端入口，不解析 React 或 SWR

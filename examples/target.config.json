@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "input": "./openapi.json",
+  "output": "./src/api",
+  "target": "react",
+  "namespace": "main",
+  "groupBy": "path",
+  "hooks": true,
+  "translateNames": false
+}
