@@ -236,7 +236,7 @@ export default function Guide({
               <summary>也可以完全从网页开始</summary>
               <ol>
                 <li>
-                  进入“配置与生成”，导入文件、粘贴 JSON，或在“连接设置”读取 JSON
+                  进入“配置与生成”，导入文件、粘贴 JSON，或在“从链接导入”读取 JSON
                   链接。
                 </li>
                 <li>选择技术栈与分组规则，生成并进入工作台。</li>
@@ -588,7 +588,7 @@ export default function Guide({
             <details className="docs-details">
               <summary>读取需要认证的 OpenAPI JSON</summary>
               <p>
-                网页标题旁的“连接设置”支持 Basic、Bearer、自定义请求头与已有登录
+                网页标题旁的“从链接导入”支持 Basic、Bearer、自定义请求头与已有登录
                 Cookie；CORS、SameSite
                 和目标站权限仍然适用。真实凭据只用于本次读取，不导出到 SDK。CLI
                 使用环境变量名引用凭据：
@@ -675,7 +675,7 @@ export default function Guide({
               ],
               [
                 "为什么 --update 拒绝覆盖？",
-                "生成目录中存在手改、额外文件或不匹配的清单。保留手工文件并改用新的输出目录，不强行覆盖。自定义代码与构建产物放在生成目录外；网页解压目录不是 CLI 管理目录，首次 CLI 请选新目录。",
+                "生成目录中存在手改、其他额外文件或不匹配的清单。正常的 dist 会保留，更新源码后需重新构建。保留手工文件并改用新的输出目录，不强行覆盖。自定义代码与构建产物放在生成目录外；网页解压目录不是 CLI 管理目录，首次 CLI 请选新目录。",
               ],
               [
                 "为什么响应是 unknown，类型没有补全？",

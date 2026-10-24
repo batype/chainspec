@@ -6,6 +6,7 @@ import { MAX_BYTES } from "./core/model";
 import { exampleText } from "./example";
 import Workspace from "./components/Workspace";
 import Guide from "./components/Guide";
+import { generationKey, configFieldErrors, exportWorkspace, importWorkspace, type DocumentInfo } from "./editor-state";
 import SourceDialog from "./components/SourceDialog";
 import { sourceRequestOptions, type SourceRequestConfig } from "./core/source-config";
 import { DEFAULT_CONFIG, parseConfig, parseControllerNames, TRANSLATION_DEFAULTS, type ChainSpecConfig } from "./core/config";
@@ -16,12 +17,9 @@ function cachedConfig() {
   catch { return { ...DEFAULT_CONFIG, target: "react" as const }; }
 }
 const defaultConfigText = JSON.stringify(cachedConfig(), null, 2);
+type SourceLabel = {kind:"example"|"edited"|"file"|"url";name:string};
+type UndoState = { input:string;configText:string;result:GeneratedProject|null;submitted:string;generatedInput:string;source:SourceLabel };
 type Theme = "system" | "light" | "dark";
-function generationKey(input: string, configText: string) {
-  const config = JSON.parse(configText);
-  delete config.target; delete config.hooks;
-  return JSON.stringify([input, config]);
-}
 function download(
   bytes: BlobPart,
   name: string,
@@ -56,7 +54,13 @@ export default function App() {
     [route, setRoute] = useState(window.location.hash),
     [generatedInput, setGeneratedInput] = useState(""),
     [theme, setTheme] = useState<Theme>(readTheme),
-    [inputOpen, setInputOpen] = useState(true);
+    [inputOpen, setInputOpen] = useState(true),
+    [sourceLabel,setSourceLabel] = useState<SourceLabel>({kind:"example",name:"内置示例"}),
+    [documentInfo,setDocumentInfo] = useState<{info?:DocumentInfo;error?:string;pending?:boolean}>({pending:true}),
+    [undo,setUndo] = useState<UndoState|null>(null),
+    [configImported,setConfigImported] = useState(false),
+    [savedWork,setSavedWork] = useState<{input:string;configText:string}|null>(null);
+  const inspectionSeq=useRef(0), fileInput=useRef<HTMLInputElement>(null), workspaceInput=useRef<HTMLInputElement>(null);
   const worker = useRef<Worker | null>(null),
     seq = useRef(0),
     editor = useRef<HTMLTextAreaElement>(null),
@@ -76,6 +80,7 @@ export default function App() {
   const parsedConfig = useMemo(() => {
     try {
       const value = parseConfig(configText);
+      const fields=configFieldErrors(value);if(Object.keys(fields).length)throw new Error(Object.values(fields)[0]);
       if (Object.keys(value.controllerNames ?? {}).some((tag) => !tag.trim()))
         throw new Error("请填写映射的原分组名称");
       return { value, error: "" };
@@ -85,13 +90,22 @@ export default function App() {
   // Keep draft field values visible even while validation reports an error.
   const settings = useMemo(() => JSON.parse(configText) as ChainSpecConfig, [configText]);
   const updateConfig = (patch: Partial<ChainSpecConfig>) => {
-    if (busy && Object.keys(patch).some(key => key !== "target" && key !== "hooks")) cancelGeneration();
+    setUndo(null);
+    if (busy && Object.keys(patch).some(key => !["target","hooks","output"].includes(key))) cancelGeneration();
     setConfigText((previous) => JSON.stringify({ ...JSON.parse(previous), ...patch }, null, 2));
     setError("");
     setNotice("");
   };
   const translation = { ...TRANSLATION_DEFAULTS[settings.translation?.provider ?? "mymemory"], ...settings.translation };
   const updateTranslation = (patch: Partial<typeof translation>) => updateConfig({ translation: { ...translation, ...patch } });
+  const fieldErrors = configFieldErrors(settings);
+  const focusConfigError = () => {
+    const node=document.querySelector<HTMLInputElement>('.settings-panel [aria-invalid="true"]');
+    if(node){ for(let parent:HTMLElement|null=node.parentElement;parent;parent=parent.parentElement)if(parent instanceof HTMLDetailsElement)parent.open=true;node.focus();node.scrollIntoView({block:"center"}); }
+    else document.getElementById("config-error")?.scrollIntoView({block:"center"});
+  };
+  const fieldAttrs = (id:string) => ({id,name:id,autoComplete:"off","aria-invalid":Boolean(fieldErrors[id]),"aria-describedby":fieldErrors[id]?`${id}-error`:undefined});
+  const fieldMessage=(id:string)=>fieldErrors[id]?<small className="field-error" id={`${id}-error`}>{fieldErrors[id]}</small>:null;
   const mappings = Object.entries(settings.controllerNames ?? {});
   const updateMapping = (index: number, tag: string, name: string) => {
     if (mappings.some(([key], i) => i !== index && key === tag)) {
@@ -136,7 +150,7 @@ export default function App() {
   const target = settings.target ?? "all";
   const visibleResult = useMemo(() => result ? selectSDKTarget(result, target, { hooks: settings.hooks !== false }) : null, [result, target, settings.hooks]);
   const changeTarget = (value: SDKTarget) => updateConfig({ target: value, hooks: value !== "node" && value !== "browser" });
-  const stateKey = generationKey(input, configText);
+  const stateKey = useMemo(()=>generationKey(input, configText),[input,configText]);
   const dirty = stateKey !== submitted;
   const ready = Boolean(result) && !dirty && !busy && !error && !parsedConfig.error;
   const options = (): GeneratorOptions => {
@@ -173,6 +187,8 @@ export default function App() {
       if (edit !== edits.current || id !== imports.current) return false;
       edits.current++;
       setInput(text);
+      setSourceLabel({kind:"url",name:url});
+      setConfigImported(false);
       updateConfig({ input: url, sourceRequest: request });
       setInputOpen(true);
       setNotice("JSON 已载入，点击生成 SDK。连接配置已保存，真实凭据未保存。");
@@ -196,6 +212,8 @@ export default function App() {
     try {
       if (file.size > MAX_BYTES) throw new Error("配置最大 8 MiB");
       const config = parseConfig(await file.text());
+      setUndo(null);
+      setConfigImported(true);
       setConfigText(JSON.stringify(config, null, 2));
       setNotice("配置已导入；URL 来源请打开连接设置获取，本地来源请另行导入 JSON 文件。");
       setError("");
@@ -214,8 +232,8 @@ export default function App() {
       setSubmitted(stateKey);
       worker.current?.postMessage({ id, input, options: opts });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "配置有误");
-      editor.current?.focus();
+      if(parsedConfig.error){setError("");setNotice("请补全标出的配置项后再生成。");focusConfigError();}
+      else{setError(e instanceof Error ? e.message : "生成失败");editor.current?.focus();}
     }
   };
   useEffect(() => {
@@ -231,7 +249,9 @@ export default function App() {
       result?: GeneratedProject;
       error?: string;
       progress?: { current: number; total: number };
+      kind?:string;info?:DocumentInfo;inspectionError?:string;
     }>) => {
+      if(data.kind==="inspection"){if(data.id===inspectionSeq.current)setDocumentInfo({info:data.info,error:data.inspectionError});return;}
       if (data.id !== seq.current) return;
       if (data.progress) {
         setNotice(`正在翻译缺失分组 ${data.progress.current} / ${data.progress.total}，已有映射直接复用…`);
@@ -279,6 +299,19 @@ export default function App() {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [theme]);
+  useEffect(()=>{
+    const id=++inspectionSeq.current;
+    if(!input.trim()){setDocumentInfo({});return;}
+    setDocumentInfo({pending:true});
+    const timer=setTimeout(()=>worker.current?.postMessage({action:"inspect",id,input}),250);
+    return()=>clearTimeout(timer);
+  },[input]);
+  useEffect(()=>{if(!undo)return;const timer=setTimeout(()=>setUndo(null),12000);return()=>clearTimeout(timer);},[undo]);
+  useEffect(()=>{
+    if(!input.trim()||(sourceLabel.kind==="example"&&configText===defaultConfigText)||(savedWork?.input===input&&savedWork?.configText===configText))return;
+    const beforeUnload=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue="";};
+    window.addEventListener("beforeunload",beforeUnload);return()=>window.removeEventListener("beforeunload",beforeUnload);
+  },[input,sourceLabel.kind,configText,savedWork]);
   const workspace = route.startsWith("#/workspace");
   const guide = route.startsWith("#/guide") || route === "#guide";
   useEffect(() => {
@@ -295,6 +328,7 @@ export default function App() {
     if (["#studio", "#top"].includes(route)) document.getElementById(route.slice(1))?.scrollIntoView();
   }, [route]);
   const clear = () => {
+    if(input.trim()||result)setUndo({input,configText,result,submitted:busy?"":submitted,generatedInput,source:sourceLabel});
     edits.current++;
     imports.current++;
     remote.current?.abort();
@@ -302,11 +336,17 @@ export default function App() {
     seq.current++;
     worker.current?.postMessage({ action: "cancel" });
     setInput("");
+    setSourceLabel({kind:"edited",name:"尚未导入文档"});
     setResult(null);
     setError("");
     setBusy(false);
     setNotice("当前输入与生成结果已清空。");
     setInputOpen(true);
+  };
+  const restoreClear = () => {
+    if(!undo)return;
+    seq.current++;imports.current++;remote.current?.abort();worker.current?.postMessage({action:"cancel"});
+    setBusy(false);setLoadingUrl(false);setInput(undo.input);setConfigText(undo.configText);setResult(undo.result);setSubmitted(undo.submitted);setGeneratedInput(undo.generatedInput);setSourceLabel(undo.source);setError("");setUndo(null);setNotice("已恢复清空前的文档、配置与生成结果。");
   };
   const sample = () => {
     if (
@@ -316,6 +356,9 @@ export default function App() {
     )
       return;
     edits.current++;
+    setUndo(null);
+    setSourceLabel({kind:"example",name:"内置示例"});
+    setConfigImported(false);
     setInput(exampleText);
     setSource("./openapi.json");
     setError("");
@@ -336,7 +379,10 @@ export default function App() {
       );
       if (edit !== edits.current || id !== imports.current) return;
       edits.current++;
+      setUndo(null);
       setInput(text);
+      setSourceLabel({kind:"file",name:file.name});
+      setConfigImported(false);
       setSource(file.name);
       setError("");
       setNotice("文件已在本地读入，点击生成SDK。");
@@ -344,6 +390,19 @@ export default function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "文件需为UTF-8 JSON");
     }
+  };
+  const saveWork = () => {
+    try{download(exportWorkspace(input,JSON.parse(configText)),"chainspec-workspace.json","application/json");setSavedWork({input,configText});setNotice("工作包已下载，包含接口文档和生成配置。请在本机妥善保存。");}
+    catch(e){setNotice(e instanceof Error?e.message:"无法保存工作包");if(parsedConfig.error)focusConfigError();}
+  };
+  const restoreWork = async (file:File|undefined) => {
+    if(!file)return;
+    try{
+      if(file.size>32*1024*1024)throw Error("工作包最大 32 MiB");
+      const value=importWorkspace(await file.text()),next=JSON.stringify(value.config,null,2);
+      edits.current++;imports.current++;seq.current++;worker.current?.postMessage({action:"cancel"});remote.current?.abort();
+      setBusy(false);setLoadingUrl(false);setInput(value.document);setConfigText(next);setResult(null);setSubmitted("");setGeneratedInput("");setSourceLabel({kind:"file",name:`工作包：${file.name}`});setConfigImported(false);setUndo(null);setSavedWork({input:value.document,configText:next});setError("");setInputOpen(true);setNotice("工作包已恢复。点击生成即可重建 SDK。连接弹窗中的账号、Token 不会保存进工作包。");
+    }catch(e){setNotice(e instanceof Error?e.message:"工作包导入失败");}
   };
   const exportZip = () => {
     if (!ready || !visibleResult) return;
@@ -362,6 +421,16 @@ export default function App() {
       }}>
         跳到主要内容
       </a>
+                      <input
+                        id="document-file" hidden aria-label="导入 OpenAPI JSON 文件" ref={fileInput}
+                        type="file"
+                        accept=".json,.txt,application/json,text/plain"
+                        onChange={(e) => {
+                          void importFile(e.target.files?.[0]);
+                          e.target.value = "";
+                        }}
+                      />
+      <input id="workspace-file" ref={workspaceInput} hidden aria-label="恢复 ChainSpec 工作包" type="file" accept=".json,application/json" onChange={e=>{void restoreWork(e.target.files?.[0]);e.target.value="";}}/>
       <header className="topbar">
         <a className="brand" href="#/configure">
           <img
@@ -412,7 +481,7 @@ export default function App() {
       </dialog>
       {sourceOpen && <SourceDialog input={settings.input} request={settings.sourceRequest} loading={loadingUrl}
         onLoad={importUrl} onSave={saveConnection} onClose={closeConnection} />}
-      {guide ? <Guide route={route} defaultTarget={target} /> : workspace ? visibleResult ? <Workspace project={visibleResult} target={target} onTargetChange={changeTarget} documentText={generatedInput} route={route} ready={ready} onDownload={exportZip} /> : <main className="workspace-page workspace-empty" id="workspace"><span className="eyebrow">SDK WORKSPACE</span><h1 id="workspace-title" tabIndex={-1}>先生成，再体验。</h1><p>生成结果只保留在当前页面内存中。导入你的文档，或用内置示例生成一个 SDK。</p><a className="primary button-link" href="#/configure">前往配置与生成 →</a></main> : <main id="top">
+      {guide ? <Guide route={route} defaultTarget={target} /> : workspace ? visibleResult ? <Workspace output={settings.output} source={settings.input} demo={generatedInput===exampleText} onConfig={exportConfig} project={visibleResult} target={target} onTargetChange={changeTarget} documentText={generatedInput} route={route} ready={ready} onDownload={exportZip} /> : <main className="workspace-page workspace-empty" id="workspace"><span className="eyebrow">SDK WORKSPACE</span><h1 id="workspace-title" tabIndex={-1}>先生成，再体验。</h1><p>生成结果只保留在当前页面内存中。导入你的文档，或用内置示例生成一个 SDK。</p><a className="primary button-link" href="#/configure">前往配置与生成 →</a></main> : <main id="top">
         <section className="hero">
           <div>
             <div className="eyebrow">
@@ -429,7 +498,7 @@ export default function App() {
               <br />
               请求由你掌控，React 交给 SWR。
             </p>
-            <div className="hero-actions"><a className="primary button-link" href="#studio">开始配置 →</a><button type="button" disabled={busy || !input.trim() || Boolean(parsedConfig.error)} onClick={generate}>生成并进入工作台 ↗</button></div>
+            <div className="hero-actions"><a className="primary button-link" href="#studio">开始配置 →</a><button type="button" disabled={busy || loadingUrl || !input.trim()} onClick={generate}>生成并进入工作台 ↗</button></div>
             <div className="hero-tags">
               <span>TypeScript 补全</span>
               <span>自定义请求与拦截器</span>
@@ -485,12 +554,20 @@ export default function App() {
                 type="button"
                 className="primary"
                 onClick={generate}
-                disabled={busy || loadingUrl || !input.trim() || Boolean(parsedConfig.error)}
+                disabled={busy || loadingUrl || !input.trim()}
               >
                 {busy ? "正在生成…" : "生成并进入工作台"} <span>↗</span>
               </button>
             </div>
           </div>
+          <div className={`source-summary ${sourceLabel.kind==="example"?"is-example":""}`} aria-label="当前文档来源">
+            <span className="source-kind">{sourceLabel.kind==="example"?"演示文档":"当前文档"}</span><strong>{sourceLabel.name}</strong>
+            {sourceLabel.kind==="example"&&<span>还没有导入你的接口；可直接体验，或导入自己的 JSON。</span>}
+            {documentInfo.pending?<span>正在本地识别…</span>:documentInfo.info?<><span>{documentInfo.info.title} · {documentInfo.info.operations} 个接口 · {documentInfo.info.schemaCount} 个模型</span><span>当前业务地址：<code>{(settings.baseUrl??documentInfo.info.baseUrl)||"相对路径（Node 需配置绝对地址）"}</code>{settings.baseUrl?"（手动覆盖）":"（来自文档）"}</span></>:documentInfo.error?<span className="field-error">{documentInfo.error}</span>:null}
+          </div>
+          <div className="workspace-backup"><span>文档仅在当前标签页；刷新前可下载工作包，之后本地恢复。工作包含业务 JSON，请勿公开提交。</span><button type="button" disabled={!input.trim()} onClick={saveWork}>保存工作包</button><button type="button" className="import-file" onClick={()=>workspaceInput.current?.click()}>恢复工作包</button></div>
+          {configImported&&<p className="source-import-note" role="status">仅生成配置已导入，当前文档仍是“{sourceLabel.name}”。{/^https?:/.test(settings.input)?<button type="button" onClick={()=>setSourceOpen(true)}>获取配置中的文档</button>:<button type="button" onClick={()=>fileInput.current?.click()}>导入对应文档文件</button>}</p>}
+          {undo&&<div className="undo-bar" role="status">已清空。可在 12 秒内恢复当前标签页中的内容。<button type="button" onClick={restoreClear}>撤销清空</button></div>}
           {inputOpen && (
             <div className="source-grid">
               <section className="source-panel">
@@ -500,18 +577,8 @@ export default function App() {
                   </h3>
                   <div>
                     <button type="button" className="source-settings-button" aria-haspopup="dialog"
-                      onClick={() => setSourceOpen(true)}><span aria-hidden="true">⚙</span> 连接设置</button>
-                    <label className="import-file">
-                      导入文件
-                      <input
-                        type="file"
-                        accept=".json,.txt,application/json,text/plain"
-                        onChange={(e) => {
-                          void importFile(e.target.files?.[0]);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
+                      onClick={() => setSourceOpen(true)}><span aria-hidden="true">↗</span> 从链接导入</button>
+                    <button type="button" className="import-file" onClick={()=>fileInput.current?.click()}>导入文件</button>
                     <button
                       type="button"
                       className="text-button"
@@ -529,6 +596,9 @@ export default function App() {
                   id="spec"
                   value={input}
                   onChange={(e) => {
+                    setUndo(null);
+                    setSourceLabel({kind:"edited",name:"粘贴 / 手动编辑"});
+                    setConfigImported(false);
                     edits.current++;
                     if (busy) cancelGeneration();
                     setInput(e.target.value);
@@ -566,9 +636,9 @@ export default function App() {
                   <button type="button" className="view-config" aria-haspopup="dialog"
                     onClick={() => configDialog.current?.showModal()}>查看配置</button>
                 </div>
-                <p className="config-help settings-intro">先设置调用方式，再按需调整命名和导出。</p>
+                <p className="config-help settings-intro">选择技术栈即可生成，其他设置使用默认值。</p>
                 <details className="settings-section common-settings" open>
-                  <summary><span>常用配置</span><small>调用方式与服务地址</small></summary>
+                  <summary><span>生成目标</span><small>默认设置即可开始</small></summary>
                 <div className="settings-grid">
                   <label htmlFor="config-target" className="target-field">SDK 技术栈
                     <select id="config-target" value={target} onChange={e => changeTarget(e.target.value as SDKTarget)}>
@@ -576,10 +646,14 @@ export default function App() {
                     </select>
                     <small>{SDK_TARGETS.find(item => item.value === target)?.description}</small>
                   </label>
+                </div>
+                <p className="config-help">默认命名空间 main，按路径分组，自动识别前缀和业务地址。</p>
+                </details>
+                <details className="settings-section advanced-settings"><summary><span>高级设置</span><small>命名规则、服务地址与 Hooks</small></summary><div className="settings-grid">
                   <label htmlFor="config-namespace">命名空间
-                    <input id="config-namespace" value={settings.namespace ?? "main"} spellCheck={false}
+                    <input {...fieldAttrs("config-namespace")} value={settings.namespace ?? "main"} spellCheck={false}
                       onChange={(e) => updateConfig({ namespace: e.target.value })} placeholder="main" />
-                    <small>API.{settings.namespace || "main"}.controller.method</small>
+                    {fieldMessage("config-namespace")}<small>API.{settings.namespace || "main"}.controller.method</small>
                   </label>
                   <label htmlFor="config-group">控制器分组
                     <select id="config-group" value={settings.groupBy ?? "path"}
@@ -589,16 +663,16 @@ export default function App() {
                     <small>中文 Tag 可在下方映射为英文</small>
                   </label>
                   <label htmlFor="config-prefix">移除公共路径前缀
-                    <input id="config-prefix" value={settings.stripPrefix ?? ""} spellCheck={false}
+                    <input {...fieldAttrs("config-prefix")} value={settings.stripPrefix ?? ""} spellCheck={false}
                       onChange={(e) => updateConfig({ stripPrefix: e.target.value || undefined })}
                       placeholder="自动识别，如 /v1/api" />
-                    <small>只影响分组，不改变请求 URL</small>
+                    {fieldMessage("config-prefix")}<small>只影响分组，不改变请求 URL</small>
                   </label>
                   <label htmlFor="config-base">覆盖服务地址
-                    <input id="config-base" value={settings.baseUrl ?? ""} spellCheck={false}
+                    <input {...fieldAttrs("config-base")} value={settings.baseUrl ?? ""} spellCheck={false}
                       onChange={(e) => updateConfig({ baseUrl: e.target.value || undefined })}
                       placeholder="使用文档中的 servers" />
-                    <small>留空则使用文档默认地址</small>
+                    {fieldMessage("config-base")}<small>留空则使用文档默认地址</small>
                   </label>
                 </div>
                 {["all", "next", "vite-ssr"].includes(target) ? <label className="check">
@@ -658,11 +732,11 @@ export default function App() {
                   <div className="mapping-list">
                     {mappings.map(([tag, name], i) => (
                       <div className="mapping-row" key={i}>
-                        <input aria-label={`原分组 ${i + 1}`} placeholder="短信管理" value={tag}
-                          onChange={(e) => updateMapping(i, e.target.value, name)} />
+                        <label><input {...fieldAttrs(`mapping-tag-${i}`)} aria-label={`原分组 ${i + 1}`} placeholder="短信管理" value={tag}
+                          onChange={(e) => updateMapping(i, e.target.value, name)} />{fieldMessage(`mapping-tag-${i}`)}</label>
                         <span aria-hidden="true">→</span>
-                        <input aria-label={`英文名称 ${i + 1}`} placeholder="sms" value={name} spellCheck={false}
-                          onChange={(e) => updateMapping(i, tag, e.target.value)} />
+                        <label><input {...fieldAttrs(`mapping-name-${i}`)} aria-label={`英文名称 ${i + 1}`} placeholder="sms" value={name} spellCheck={false}
+                          onChange={(e) => updateMapping(i, tag, e.target.value)} />{fieldMessage(`mapping-name-${i}`)}</label>
                         <button type="button" aria-label={`删除映射 ${i + 1}`}
                           onClick={() => updateConfig({ controllerNames: Object.fromEntries(mappings.filter((_, index) => index !== i)) })}>×</button>
                       </div>
@@ -687,14 +761,14 @@ export default function App() {
                   <summary><span>CLI 与导出</span><small>文件路径、配置导入导出</small></summary>
                   <div className="settings-grid">
                     <label htmlFor="config-source">文档来源
-                      <input id="config-source" value={settings.input} spellCheck={false}
+                      <input {...fieldAttrs("config-source")} value={settings.input} spellCheck={false}
                         onChange={(e) => updateConfig({ input: e.target.value })} placeholder="./openapi.json 或 JSON 链接" />
-                      <small>网页获取链接请使用左侧“连接设置”</small>
+                      {fieldMessage("config-source")}<small>仅供 CLI 使用；网页读取请使用“从链接导入”</small>
                     </label>
                     <label htmlFor="config-output">SDK 输出目录
-                      <input id="config-output" value={settings.output} spellCheck={false}
+                      <input {...fieldAttrs("config-output")} value={settings.output} spellCheck={false}
                         onChange={(e) => updateConfig({ output: e.target.value })} placeholder="./src/api" />
-                      <small>CLI 路径相对于配置文件</small>
+                      {fieldMessage("config-output")}<small>CLI 路径相对于配置文件</small>
                     </label>
                   </div>
                 <div className="config-actions">
@@ -707,7 +781,7 @@ export default function App() {
                   <p>重复生成加 --update；仅替换未经手工修改的 CLI 生成目录。</p>
                 </details>
                 </details>
-                <p id="config-error" className="config-error" role="alert">{parsedConfig.error}</p>
+                <p id="config-error" className="config-error" role="alert">{parsedConfig.error}{parsedConfig.error&&<button type="button" onClick={focusConfigError}>定位配置问题</button>}</p>
               </section>
             </div>
           )}

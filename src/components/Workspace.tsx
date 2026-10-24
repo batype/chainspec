@@ -4,6 +4,7 @@ import type { GeneratedProject, SDKTarget } from "../core/model";
 import { usage, type UsageEnvironment } from "../usage";
 import Code from "./Code";
 import Playground from "./Playground";
+import IntegrationSteps from "./IntegrationSteps";
 
 type Props = {
   project: GeneratedProject;
@@ -11,10 +12,12 @@ type Props = {
   route: string;
   ready: boolean;
   onDownload: () => void;
+  output: string; source: string; demo:boolean; onConfig:()=>void;
   target: SDKTarget;
   onTargetChange: (target: SDKTarget) => void;
 };
 const views = [
+  "setup",
   "playground",
   "usage",
   "types.ts",
@@ -33,6 +36,7 @@ export default function Workspace({
   onDownload,
   target,
   onTargetChange,
+  output,source,demo,onConfig,
 }: Props) {
   const query = new URLSearchParams(route.split("?")[1] ?? "");
   const [search, setSearch] = useState(""),
@@ -86,10 +90,10 @@ export default function Workspace({
     project.operations.find((op) => op.id === query.get("op")) ?? fallback;
   const view =
     views.includes(query.get("tab") as View) &&
-    (["playground", "usage", "diagnostics"].includes(query.get("tab") ?? "") ||
+    (["setup", "playground", "usage", "diagnostics"].includes(query.get("tab") ?? "") ||
       Object.hasOwn(project.files, query.get("tab") ?? ""))
       ? (query.get("tab") as View)
-      : "playground";
+      : "setup";
   const document = useMemo(() => {
     try {
       return JSON.parse(documentText) as unknown;
@@ -123,6 +127,7 @@ export default function Workspace({
           op,
           hooks && !serverExample ? mode : "request",
           environment,
+          document,
         )
       : view === "diagnostics"
         ? JSON.stringify(project.diagnostics, null, 2)
@@ -300,7 +305,7 @@ export default function Workspace({
             {views
               .filter(
                 (tab) =>
-                  ["playground", "usage", "diagnostics"].includes(tab) ||
+                  ["setup", "playground", "usage", "diagnostics"].includes(tab) ||
                   Object.hasOwn(project.files, tab),
               )
               .map((tab) => (
@@ -309,7 +314,7 @@ export default function Workspace({
                   href={href(tab)}
                   aria-current={view === tab ? "page" : undefined}
                 >
-                  {tab === "playground"
+                  {tab === "setup" ? "接入项目" : tab === "playground"
                     ? "◉ 交互体验"
                     : tab === "usage"
                       ? "接入示例"
@@ -335,7 +340,7 @@ export default function Workspace({
               该文档没有可生成的接口，可查看诊断报告。
             </p>
           )}
-          {view === "playground" ? (
+          {view === "setup" ? (op&&<IntegrationSteps project={project} op={op} document={document} target={target} output={output} source={source} demo={demo} ready={ready} onDownload={onDownload} onConfig={onConfig}/>) : view === "playground" ? (
             op && (
               <Playground
                 key={op.id}

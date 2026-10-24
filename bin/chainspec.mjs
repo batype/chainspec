@@ -8,7 +8,7 @@ import { generateSDKAsync, parseConfig, parseControllerNames, fetchDocument, sou
 const args = process.argv.slice(2), opts = {};
 const marker = ".chainspec-generated.json";
 const digest = text => createHash("sha256").update(text).digest("hex");
-let inputPath, output, configPath, envPath, update = false;
+let inputPath, output, configPath, envPath, update = false, preserveBuild = false;
 async function localJSON(path) {
   const stat = await lstat(path);
   if (!stat.isFile() || stat.size > MAX_BYTES)
@@ -19,13 +19,20 @@ async function exists(path) {
   try { return await lstat(path); }
   catch (e) { if (e.code === "ENOENT") return null; throw e; }
 }
+// Build output is preserved, never treated as disposable generated source.
+async function checkBuildDirectory(path, budget = { remaining: 10000 }) {
+  if (--budget.remaining < 0) throw Error("Build directory is too large to update safely");
+  const stat = await lstat(path);
+  if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) throw Error("Refusing to preserve a build directory containing symlinks or special files");
+  if (stat.isDirectory()) for (const name of await readdir(path)) await checkBuildDirectory(join(path, name), budget);
+}
 try {
   if (args[0] === "translate-server") {
     const { runTranslationServer } = await import("./translation-server.mjs");
     await runTranslationServer(args.slice(1));
   } else {
   if (args.includes("--help") || !args.length) {
-    console.log("chainspec --config chainspec.config.json [--update] [--no-translate] [--env-file .env]\nchainspec translate-server --config chainspec.config.json [--env-file .env] [--origin https://batype.github.io]\nchainspec --in openapi.json|https://example.com/api-json --out ./new-sdk [--namespace main] [--strip-prefix /v1/api] [--group-by path|tag] [--base-url URL] [--no-hooks] [--target node|browser|react|next|vite-ssr|all]\nPaths in JSON resolve relative to the config file; explicit CLI flags override JSON.\nCreates a new directory. --update replaces only an unchanged CLI-generated directory.");
+    console.log("chainspec --config chainspec.config.json [--update] [--no-translate] [--env-file .env]\nchainspec translate-server --config chainspec.config.json [--env-file .env] [--origin https://batype.github.io]\nchainspec --in openapi.json|https://example.com/api-json --out ./new-sdk [--namespace main] [--strip-prefix /v1/api] [--group-by path|tag] [--base-url URL] [--no-hooks] [--target node|browser|react|next|vite-ssr|all]\nPaths in JSON resolve relative to the config file; explicit CLI flags override JSON.\nCreates a new directory. --update replaces only unchanged CLI-generated source, preserves declared dist, and requires rebuilding.");
     process.exit(0);
   }
   if (args.includes("--version")) { console.log(VERSION); process.exit(0); }
@@ -73,14 +80,25 @@ try {
     if (owner.generator !== "ChainSpec" || !owner.files || typeof owner.files !== "object" || Array.isArray(owner.files))
       throw Error("Invalid generated-directory marker");
     const names = await readdir(dir);
-    if (names.some(name => name !== marker && !Object.hasOwn(owner.files, name)))
-      throw Error("Output contains extra files; move custom code outside the generated directory");
     for (const [name, hash] of Object.entries(owner.files)) {
       if (name !== basename(name) || name === marker || !names.includes(name)) throw Error("Generated files changed; choose a new directory");
       const stat = await lstat(join(dir, name));
       if (!stat.isFile() || stat.isSymbolicLink() || digest(await readFile(join(dir, name))) !== hash)
         throw Error("Generated files changed; choose a new directory to preserve edits");
     }
+    if (names.includes("dist")) {
+      const configs = ["tsconfig.json", "tsconfig.node.json"].filter(name => Object.hasOwn(owner.files, name));
+      let declared = false;
+      for (const name of configs) if (["./dist", "dist"].includes(JSON.parse(await localJSON(join(dir, name))).compilerOptions?.outDir)) declared = true;
+      if (declared) {
+        const build = await lstat(join(dir, "dist"));
+        if (!build.isDirectory() || build.isSymbolicLink()) throw Error("Refusing to preserve a non-directory or symlink dist");
+        await checkBuildDirectory(join(dir, "dist"));
+        preserveBuild = true;
+      }
+    }
+    if (names.some(name => name !== marker && !(preserveBuild && name === "dist") && !Object.hasOwn(owner.files, name)))
+      throw Error("Output contains extra files; move custom code outside the generated directory");
   }
   let cachedNames = {};
   if (old && await exists(join(dir, "controller-names.json")))
@@ -102,8 +120,14 @@ try {
     if (old) {
       const backup = `${stage}.previous`;
       await rename(dir, backup);
-      try { await rename(stage, dir); }
-      catch (e) { await rename(backup, dir); throw e; }
+      let movedBuild = false;
+      try {
+        if (preserveBuild) { await rename(join(backup, "dist"), join(stage, "dist")); movedBuild = true; }
+        await rename(stage, dir);
+      } catch (e) {
+        if (movedBuild) await rename(join(stage, "dist"), join(backup, "dist"));
+        await rename(backup, dir); throw e;
+      }
       await rm(backup, { recursive: true });
     } else {
       // Reserve destination first so a concurrently created directory is never replaced.
@@ -124,6 +148,7 @@ try {
       console.warn("SDK generated, but config cache was not saved (changed or not writable). Names remain in controller-names.json.");
     } finally { await rm(temp, { force: true }); }
   }
+  if (preserveBuild) console.log("Preserved dist without modifying its files. Run npm run build to refresh the compiled SDK.");
   console.log(`Generated ${result.operations.length} operations, ${result.schemaCount} schemas, ${result.diagnostics.length} diagnostics.\nOutput: ${dir}`);
 }
 } catch (error) {

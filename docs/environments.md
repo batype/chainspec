@@ -33,7 +33,7 @@ npx tsc -p ./src/api/tsconfig.react.json
 
 也可进入 SDK 目录安装所需依赖，再运行 `npm run build:node` 或 `npm run build:react`；`npm run build` 按是否开启 Hooks 选择完整构建。Node-only 用户应选择 build:node 或生成时关闭 Hooks，避免构建未使用的 React 文件。可选 peerDependencies 不会强制 Node 消费者安装 React/SWR。
 
-Next.js 默认 Turbopack 不保证把源代码里的 `.js` 路径映射到同名 `.ts`，所以 Next.js 示例使用 `dist/node.js` / `dist/react.js`；TypeScript 编译保留 use client，`.d.ts` 保留模型与参数类型。不需要修改 Next.js 的全局模块解析规则。Vite 可直接处理原有 TypeScript 源码，也能使用 dist。Node ESM 使用 dist 运行。重新生成 SDK 后重新构建；CLI --update 会保护手工文件，建议把编译输出放在生成目录之外（使用 `--outDir ../api-dist` 并相应调整导入），或重新导入到新目录。
+Next.js 默认 Turbopack 不保证把源代码里的 `.js` 路径映射到同名 `.ts`，所以 Next.js 示例使用 `dist/node.js` / `dist/react.js`；TypeScript 编译保留 use client，`.d.ts` 保留模型与参数类型。不需要修改 Next.js 的全局模块解析规则。Vite 可直接处理原有 TypeScript 源码，也能使用 dist。Node ESM 使用 dist 运行。重新生成 SDK 后重新构建；CLI --update 会保护手工源码、保留正常的 dist 目录；更新后需要重新构建。也可把编译输出放在生成目录之外（使用 `--outDir ../api-dist` 并相应调整导入），或重新导入到新目录。
 
 ## Node / Next.js 服务端 / Vite SSR loader
 
