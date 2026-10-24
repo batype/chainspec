@@ -1,3 +1,4 @@
+import { build } from "vite";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, mkdir, readFile, rm } from "node:fs/promises";
@@ -127,7 +128,7 @@ test("each target emits an exact dependency closure and matching build, manifest
     if (target === "react") {
       assert(!project.files["client.ts"]);
       assert(!project.files["node.ts"]);
-      assert(project.files["index.ts"].startsWith('"use client";'));
+      assert(!project.files["index.ts"].includes('"use client";'));
       assert(!metadata.exports["./node"]);
     }
   }
@@ -311,7 +312,7 @@ test("CLI --target overrides JSON and --update switches output sets while preser
     code: "ENOENT",
   });
   assert(
-    (await readFile(join(root, "sdk/react.ts"), "utf8")).startsWith(
+    !(await readFile(join(root, "sdk/react.ts"), "utf8")).startsWith(
       '"use client";',
     ),
   );
@@ -339,4 +340,124 @@ test("CLI --target overrides JSON and --update switches output sets while preser
   ]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /target/);
+});
+
+test("client boundaries follow the selected framework without changing Hook implementation", async () => {
+  for (const { value: target } of SDK_TARGETS) {
+    const project = generateSDK(spec, { target });
+    const boundary = target === "next" || target === "all";
+    for (const [name, source] of Object.entries(project.files).filter(
+      ([name]) => name.endsWith(".ts"),
+    )) {
+      assert.equal(
+        source.startsWith('"use client";'),
+        boundary && ["react.ts", "hooks.ts"].includes(name),
+        `${target}/${name}`,
+      );
+    }
+    if (target === "react" || target === "vite-ssr") {
+      for (const name of ["react.ts", "hooks.ts"])
+        assert.equal(
+          project.files[name],
+          full.files[name].replace(/^"use client";\r?\n/, ""),
+        );
+      assert(!project.files["README.md"].includes('"use client";'));
+    }
+    if (target === "next") {
+      assert(project.files["README.md"].includes('"use client";'));
+      const root = join(dir, "boundary-next");
+      // The emitted client marker must also survive the actual SDK TypeScript build.
+      await save(project, root);
+      compile(["-p", join(root, "tsconfig.json")]);
+      await Promise.all(
+        ["react", "hooks"].map(async (name) => {
+          assert(
+            (await readFile(join(root, `dist/${name}.js`), "utf8")).startsWith(
+              '"use client";',
+            ),
+          );
+        }),
+      );
+    }
+  }
+});
+
+test("Vite SPA and SSR targets build without SDK directive warnings and SSR renders fallback data without Hook fetching", async () => {
+  for (const target of ["react", "vite-ssr"]) {
+    const root = join(dir, "vite-" + target);
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, "package.json"), '{"type":"module"}');
+    await save(generateSDK(spec, { target }), join(root, "sdk"));
+    await writeFile(
+      join(root, "index.html"),
+      '<div id="app"></div><script type="module" src="/entry-client.ts"></script>',
+    );
+    await writeFile(
+      join(root, "entry-client.ts"),
+      `import * as React from 'react';import {createRoot} from 'react-dom/client';import {createReactAPI} from './sdk/${target === "react" ? "index" : "react"}.js';const API=createReactAPI();function View(){const {data}=API.main.users.getUser.useRequest({path:{id:'42'}},{enabled:false});return React.createElement('p',null,data?.name);}createRoot(document.getElementById('app')!).render(React.createElement(View));`,
+    );
+    const warnings = [];
+    const buildOptions = {
+      configFile: false,
+      root,
+      logLevel: "silent",
+      build: {
+        rolldownOptions: {
+          onLog(level, log) {
+            if (level === "warn") warnings.push(log);
+          },
+        },
+      },
+    };
+    await build({
+      ...buildOptions,
+      build: { ...buildOptions.build, outDir: join(root, "browser") },
+    });
+    if (target === "vite-ssr") {
+      await writeFile(
+        join(root, "entry-server.ts"),
+        `import * as React from 'react';import {renderToString} from 'react-dom/server';import {createAPI} from './sdk/node.js';import {createReactAPI} from './sdk/react.js';export async function render(name:string){let requests=0;const API=createAPI({request:async()=>{requests++;return{status:200,headers:new Headers(),data:{name}}}});const initial=await API.main.users.getUser.request({path:{id:name}});let hookRequests=0;function View(){const[client]=React.useState(()=>createReactAPI({request:async()=>{hookRequests++;throw Error('SSR must not fetch in Hook')}}));const{data}=client.main.users.getUser.useRequest({path:{id:name}},{swr:{fallbackData:initial,revalidateOnMount:false}});return React.createElement('p',null,data?.name);}const html=renderToString(React.createElement(View));return{html,requests,hookRequests};}`,
+      );
+      await build({
+        ...buildOptions,
+        build: {
+          ...buildOptions.build,
+          ssr: "entry-server.ts",
+          outDir: join(root, "server"),
+        },
+      });
+      // Run the production bundle in a fresh process, avoiding mixed dev/prod
+      // React module caches after Vite sets NODE_ENV for its browser build.
+      const moduleURL = pathToFileURL(
+        join(root, "server/entry-server.js"),
+      ).href;
+      const run = execute(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `const {render}=await import(${JSON.stringify(moduleURL)});console.log(JSON.stringify(await Promise.all(['Alice','Bob'].map(render))));`,
+        ],
+        { env: { ...process.env, NODE_ENV: "production" } },
+      );
+      assert.equal(run.status, 0, run.stdout + run.stderr);
+      assert.deepEqual(
+        JSON.parse(run.stdout),
+        ["Alice", "Bob"].map((name) => ({
+          html: `<p>${name}</p>`,
+          requests: 1,
+          hookRequests: 0,
+        })),
+      );
+    }
+    assert.equal(
+      warnings.filter(
+        (log) =>
+          log.code === "MODULE_LEVEL_DIRECTIVE" &&
+          (log.id?.includes("/sdk/") || log.message.includes("/sdk/")),
+      ).length,
+      0,
+      JSON.stringify(warnings),
+    );
+  }
 });

@@ -75,9 +75,11 @@ const deferred=API.main.users.createUser.useRequest({}, undefined, {enabled:fals
 | Next.js 客户端组件 | `sdk/dist/react.js`（先构建） | `request()` / `useRequest()` |
 | Vite React SSR 共享组件与 hydration | `sdk/react.js` | 首屏 fallbackData + 挂载后 useRequest / refresh |
 
-Next.js Server Component 不能调用 Hook；Client Component 仍可能在服务端预渲染。服务端用 request 预取，再将可序列化数据交给 React 的 swr.fallbackData，按需要关闭首屏重复校验。SSR 为每个请求/渲染树创建独立客户端和缓存，不能共享用户认证。生成入口保留 use client 边界，不在通用入口引入 React。
+Next.js Server Component 不能调用 Hook；Client Component 仍可能在服务端预渲染。服务端用 request 预取，再将可序列化数据交给 React 的 swr.fallbackData，按需要关闭首屏重复校验。SSR 为每个请求/渲染树创建独立客户端和缓存，不能共享用户认证。Next.js 与完整 SDK 的 React 入口保留 use client 边界，不在通用入口引入 React。React / Vite 和 Vite SSR 目标不生成该指令。
 
 指定技术栈附带单一 `tsconfig.json`、必要依赖与针对该目标的 README；`all` 模式保留独立 Node / React 构建配置及可选 peerDependencies。Next.js 使用编译产物，兼容默认 Turbopack 的模块解析。Node-only 构建不会解析 React 入口。新增 `fetch` 配置可包装 Next.js 的 fetch 缓存策略，同时保留 SDK 序列化与拦截器。`request` 自定义适配器优先。完整步骤及 Next.js、Vite SSR 示例见 [环境接入指南](docs/environments.md)，`all` 下载包附带 `ENVIRONMENTS.md`，其他目标只附带自身的 README。
+
+`"use client"` 用于 React Server Components 的客户端边界。3.2.1 起按目标处理：Node / browser 不带该指令；React / Vite、常规 Vite React SSR 的源码、README 和预览示例不带该指令；Next.js 仅 React / Hooks 入口与客户端组件示例保留；`all` 保留跨框架兼容行为。在普通 Vite 中该指令不会启用 RSC，也不决定 SSR 的执行位置；旧版本可以正常使用，但打包器可能报告模块指令警告。SWR 等第三方依赖自身的同类警告可能仍然出现。参见 [React 指令说明](https://react.dev/reference/rsc/use-client)。
 
 注意：npm 的 `@batype/chainspec` 是生成器；`sdk/node.js` 与 `sdk/react.js` 是生成结果的本地入口。原有 `@batype/chainspec/node` 为生成器的翻译适配器，不是业务 SDK。
 

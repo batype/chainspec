@@ -74,7 +74,7 @@ export function UserView() {
 }
 ```
 
-Next.js 的 **Server Component（RSC）不能调用 useRequest**。生成的 `react.ts` / `hooks.ts` 带有 `"use client"`；调用 Hook 的组件也应处于客户端边界。Client Component 仍可能参与服务端预渲染，所以不要在 render 中读 `window`、`localStorage` 或调用 `trigger()`。普通 SSR 渲染 React 组件时可以执行 Hook 来读取首屏数据；自动请求在客户端挂载后运行，不应依赖它完成服务端取数。
+Next.js 的 **Server Component（RSC）不能调用 useRequest**。`next` / `all` 目标的 `react.ts` / `hooks.ts` 带有 `"use client"`；React / Vite 和常规 Vite SSR 目标不生成该指令。调用 Hook 的组件也应处于客户端边界。Client Component 仍可能参与服务端预渲染，所以不要在 render 中读 `window`、`localStorage` 或调用 `trigger()`。普通 SSR 渲染 React 组件时可以执行 Hook 来读取首屏数据；自动请求在客户端挂载后运行，不应依赖它完成服务端取数。
 
 ## Next.js / Vite React SSR：预取 → 首屏 → hydration
 

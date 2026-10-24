@@ -364,6 +364,11 @@ test("environment examples select pure server entries or React client boundaries
   assert(client.includes('"use client";'));
   assert(client.includes("./sdk/dist/react.js"));
   assert(client.includes(".useRequest("));
+  for (const environment of ["react", "universal"]) {
+    const code = usage(generated, op, "hook", environment);
+    assert(code.includes(".useRequest("));
+    assert(!code.includes('"use client";'));
+  }
   const clientRequest = usage(generated, op, "request", "next-client");
   assert(clientRequest.includes("createReactAPI"));
   assert(clientRequest.includes("export async function submit"));

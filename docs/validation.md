@@ -112,3 +112,11 @@ npm发布授权完成后返回`+ @batype/chainspec@1.0.0`。等待后台处理�
 - `npm run build` 与 `git diff --check` 通过。请求与 Hook 模板未修改。CLI / Node API 省略 target 时保持 all；Node / browser 自动不生成 React 文件或依赖；Next / Vite SSR 同时保留本技术栈需要的服务端与客户端入口。
 - 浏览器实际下载 Node、React、Next ZIP，并用包内配置、同一合成文档运行 CLI，SDK 文件内容逐字节一致。工作台只显示所选入口与环境示例，JSON 配置随选择同步。390×844 手机暗色与桌面亮色检查通过，下载控件在窄屏纵向排列；临时视口已重置，浏览器无警告或错误日志。未调用业务接口。
 - npm tarball 检查 35 文件，只含生成器、文档及空白配置示例；在项目外独立离线安装，公开 API 的所有 target 和已安装 CLI 的 Node 生成验证通过。注册表发布状态以正式发布结果为准。
+
+## 3.2.1 技术栈客户端指令检查
+
+- 复现 3.2.0 React / Vite 生产构建：可成功构建，但 index.ts、react.ts、hooks.ts 会报告 MODULE_LEVEL_DIRECTIVE。该指令是 RSC 边界，常规 Vite SPA / SSR 不需要。
+- React / Vite、Vite SSR 的源码移除顶层 use client，README 和预览示例同步；Next.js 及 all 的 React/Hooks 入口保留，Node/browser 及通用服务端入口不引入该指令。React/Hooks 实现与兼容模式仅差这一行，未改请求或 Hook 逻辑。
+- `npm test` 51 项通过，含原49项回归及按技术栈的指令、编译产物保留、Vite SPA / SSR 真实生产构建检查。SSR 产物在独立 production 进程渲染两个用户的首屏数据，服务端 request 各一次，Hook 渲染请求次数为0。SWR 自身的指令警告不作为 SDK 警告；不在用户配置中屏蔽警告。
+- 独立 Next.js 16.4.3 App Router 工程使用 next 目标，SDK TypeScript 构建及默认 Turbopack 生产构建、类型检查通过，React 入口在编译后保留客户端指令。
+- 网页实际下载 React SDK 3.2.1，index/react/hooks、README 无 use client 指令；切换 Next.js 源码保留客户端指令。生产构建与差异检查通过。

@@ -1,6 +1,6 @@
 {
   "name": "@batype/chainspec",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Generate typed chainable TypeScript SDKs and SWR hooks from OpenAPI JSON, locally.",
   "type": "module",
   "license": "MIT",
