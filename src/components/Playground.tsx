@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { SWRConfig } from "swr";
 import {
   createClient,
+  ApiError,
   type Input,
   type RequestContext,
 } from "../../templates/runtime";
@@ -9,15 +10,19 @@ import { withQuery } from "../../templates/hooks";
 import type { GeneratedProject, Operation } from "../core/model";
 import { operationSample, parsePlayground } from "../playground";
 import Code from "./Code";
+import { connectionHeaders, createLiveFetch, liveError, validateConnection, type LiveConnection, type LiveResponseInfo } from "../playground-live";
 
 type Props = {
   project: GeneratedProject;
   op: Operation;
   document: unknown;
   hooks: boolean;
+  demo: boolean;
+  connection: LiveConnection;
+  onConnection: (value: LiveConnection)=>void;
 };
 const pretty = (value: unknown) =>
-  JSON.stringify(value, null, 2) ?? "// 无响应体";
+  JSON.stringify(value instanceof Blob ? {type:value.type,size:value.size,description:"二进制响应，预览仅显示元信息"} : value, null, 2) ?? "// 无响应体";
 export default function Playground(props: Props) {
   const cache = useMemo(
     () => ({
@@ -33,7 +38,13 @@ export default function Playground(props: Props) {
     </SWRConfig>
   );
 }
-function Session({ project, op, document, hooks }: Props) {
+function Session({ project, op, document, hooks, demo, connection, onConnection }: Props) {
+  const [transport,setTransport] = useState<"live"|"mock">(demo?"mock":"live");
+  const live=transport==="live";
+  const [draft,setDraft]=useState(connection), [connectionError,setConnectionError]=useState("");
+  const [responseInfo,setResponseInfo]=useState<LiveResponseInfo>();
+  const controllers=useRef(new Set<AbortController>());
+  const connectionChanged=JSON.stringify(draft)!==JSON.stringify(connection);
   const initial = useMemo(() => operationSample(op, document), [op, document]);
   const [params, setParams] = useState(pretty(initial.params)),
     [body, setBody] = useState(pretty(initial.body)),
@@ -44,7 +55,7 @@ function Session({ project, op, document, hooks }: Props) {
     headers: initial.headers,
   });
   const [mode, setMode] = useState<"request" | "hook">("request"),
-    [enabled, setEnabled] = useState(true);
+    [enabled, setEnabled] = useState(demo);
   const [invalid, setInvalid] = useState(""),
     [events, setEvents] = useState<string[]>([]),
     [count, setCount] = useState(0);
@@ -60,6 +71,7 @@ function Session({ project, op, document, hooks }: Props) {
     alive.current = true;
     return () => {
       alive.current = false;
+      controllers.current.forEach(controller=>controller.abort());
     };
   }, []);
   const endpoint = useMemo(() => {
@@ -67,15 +79,21 @@ function Session({ project, op, document, hooks }: Props) {
       if (alive.current) setEvents((list) => [...list.slice(-11), text]);
     };
     const client = createClient({
-      baseUrl: project.baseUrl,
-      cacheScope: "local-playground",
+      baseUrl: live ? connection.baseUrl : project.baseUrl,
+      cacheScope: live ? "live-playground" : "local-playground",
+      ...(live ? {headers:connectionHeaders(connection), fetch:createLiveFetch(connection,controllers.current,info=>{if(alive.current)setResponseInfo(info);})} : {}),
       beforeRequest: [
         (ctx) => {
-          log("beforeRequest · 请求参数已准备");
+          if(live){
+            validateConnection(connection);
+            setCount(value=>value+1);setData(undefined);setRequestError("");setResponseInfo(undefined);
+            setLastRequest({method:ctx.method,url:ctx.url,headers:Object.fromEntries(ctx.headers),...(ctx.body!==undefined?{body:ctx.body}:{})});
+            log("request · 浏览器 Fetch · 发送真实 HTTP 请求");
+          } else log("beforeRequest · 请求参数已准备");
           return ctx;
         },
       ],
-      request: async (ctx: RequestContext) => {
+      ...(!live ? {request: async (ctx: RequestContext) => {
         const shouldFail = failure.current;
         if (alive.current) {
           setCount((value) => value + 1);
@@ -100,18 +118,17 @@ function Session({ project, op, document, hooks }: Props) {
             : initial.response,
           headers: new Headers(),
         };
-      },
+      }} : {}),
       afterResponse: [
         (response) => {
-          log(`afterResponse · ${response.status} · 返回模拟数据`);
+          log(`afterResponse · ${response.status} · ${live?"真实响应":"返回模拟数据"}`);
           return response;
         },
       ],
       onError: [
         (error) => {
-          log(
-            `onError · ${error instanceof Error ? error.message : "请求失败"}`,
-          );
+          if(alive.current) { setRequestError(live?liveError(error):error instanceof Error?error.message:"请求失败"); if(error instanceof ApiError)setData(error.data); }
+          log(`onError · ${error instanceof Error ? error.message : "请求失败"}`);
         },
       ],
     });
@@ -123,7 +140,7 @@ function Session({ project, op, document, hooks }: Props) {
         mediaType: op.body?.mediaType,
       }),
     );
-  }, [op, project.baseUrl, initial]);
+  }, [op, project.baseUrl, initial, live, connection]);
   const options = useMemo(
     () => ({
       headers: bound.headers,
@@ -147,7 +164,7 @@ function Session({ project, op, document, hooks }: Props) {
   )(...args);
   const running =
     pending || hook.isLoading || hook.isMutating || hook.isValidating;
-  const currentError = mode === "hook" ? hook.error?.message : requestError;
+  const currentError = mode === "hook" ? (hook.error ? (live?liveError(hook.error):hook.error.message) : "") : requestError;
   const currentData = mode === "hook" ? hook.data : data;
   const changed =
     params !== pretty(bound.params) ||
@@ -181,7 +198,7 @@ function Session({ project, op, document, hooks }: Props) {
       else await hook.refresh();
     } catch (error) {
       if (alive.current)
-        setRequestError(error instanceof Error ? error.message : "请求失败");
+        setRequestError(live?liveError(error):error instanceof Error ? error.message : "请求失败");
     } finally {
       if (alive.current) setPending(false);
     }
@@ -192,18 +209,37 @@ function Session({ project, op, document, hooks }: Props) {
     ...(op.body ? [pretty(bound.body)] : []),
     pretty({ headers: bound.headers, ...(mode === "hook" ? { enabled } : {}) }),
   ];
-  const code =
+  const code = (live?`// 真实请求 baseUrl: ${JSON.stringify(connection.baseUrl)}\n// 认证使用请求设置；下方 headers 可覆盖同名认证头。\n`:"// 本地模拟，不发送 HTTP\n") + (
     mode === "request"
       ? `const data = await ${call}.request(\n${values.join(",\n")}\n);`
-      : `const { data, error, isLoading, trigger, refresh } =\n  ${call}.useRequest(\n${values.join(",\n")}\n);\n\n// 事件或自定义 Hook 回调中重新请求\nconst onSubmit = () => trigger();\nconst onRefresh = () => refresh();`;
+      : `const { data, error, isLoading, trigger, refresh } =\n  ${call}.useRequest(\n${values.join(",\n")}\n);\n\n// 事件或自定义 Hook 回调中重新请求\nconst onSubmit = () => trigger();\nconst onRefresh = () => refresh();`);
   return (
     <div className="playground">
+      <div className="play-transport" role="group" aria-label="请求模式">
+        <button type="button" aria-pressed={live} disabled={running} onClick={()=>{setTransport("live");setEnabled(false);setData(undefined);setCount(0);setEvents([]);setRequestError("");setLastRequest(undefined);setResponseInfo(undefined);}}>真实请求</button>
+        <button type="button" aria-pressed={!live} disabled={running} onClick={()=>{setTransport("mock");setEnabled(false);setData(undefined);setCount(0);setEvents([]);setRequestError("");setLastRequest(undefined);setResponseInfo(undefined);}}>模拟演示</button>
+      </div>
       <div className="sandbox-banner">
-        <span className="sandbox-dot" /> 本地体验{" "}
+        <span className="sandbox-dot" /> {live?"真实 API 调试":"本地模拟"}{" "}
         <span>
-          运行 SDK 共用的请求层与 SWR Hook，响应由 Schema 合成，不调用业务接口。
+          {live?"点击运行将向下方业务地址发送参数和认证；响应来自服务端。":"响应由 Schema 合成，不发送 HTTP；切换真实请求可调试你的 API。"}
         </span>
       </div>
+      {live&&<details className="live-settings" open={!connection.baseUrl || Boolean(connectionError)}>
+        <summary>请求设置 <code>{connection.baseUrl || "请填写业务地址"}</code></summary>
+        <fieldset disabled={running}>
+          <label>业务地址 baseUrl<input aria-label="业务地址 baseUrl" type="url" value={draft.baseUrl} placeholder="https://api.example.com" onChange={e=>{setDraft({...draft,baseUrl:e.target.value});setEnabled(false);}}/></label>
+          <label>认证方式<select aria-label="认证方式" value={draft.auth} onChange={e=>{setDraft({...draft,auth:e.target.value as LiveConnection["auth"]});setEnabled(false);}}><option value="none">无 / 自定义 headers</option><option value="bearer">Bearer Token</option><option value="basic">Basic 账号密码</option></select></label>
+          {draft.auth==="bearer"&&<label>Bearer Token<input aria-label="Bearer Token" type="password" autoComplete="off" value={draft.token} onChange={e=>{setDraft({...draft,token:e.target.value});setEnabled(false);}}/></label>}
+          {draft.auth==="basic"&&<><label>用户名<input aria-label="Basic 用户名" autoComplete="off" value={draft.username} onChange={e=>{setDraft({...draft,username:e.target.value});setEnabled(false);}}/></label><label>密码<input aria-label="Basic 密码" type="password" autoComplete="off" value={draft.password} onChange={e=>{setDraft({...draft,password:e.target.value});setEnabled(false);}}/></label></>}
+          <label className="live-cookie"><input type="checkbox" checked={draft.credentials} onChange={e=>{setDraft({...draft,credentials:e.target.checked});setEnabled(false);}}/>携带目标站已有登录 Cookie</label>
+          <button type="button" disabled={!connectionChanged} onClick={()=>{try{const next={...draft,baseUrl:draft.baseUrl.trim()};validateConnection(next);setDraft(next);setEnabled(false);setData(undefined);setRequestError("");setResponseInfo(undefined);setLastRequest(undefined);setCount(0);setEvents([]);onConnection(next);setConnectionError("");}catch(error){setConnectionError(liveError(error));}}}>应用请求设置</button>
+        </fieldset>
+        <p>认证只保留在本页内存，不会进入下载配置或工作包。自定义请求头在下方 headers 填写。Cookie 需先在目标站登录，并允许跨站凭据；浏览器不能手填 Cookie 请求头或 params.cookies。此设置与“导入文档”的认证独立。</p>
+        <p>真实请求受目标服务 CORS、HTTPS 和登录权限限制；POST 等操作会真实修改业务数据。超时 30 秒、响应预览上限 8 MiB，不自动跟随重定向。</p>
+        {connectionError&&<p className="play-error" role="alert">{connectionError}</p>}
+        {connectionChanged&&<p role="status">请求设置尚未应用。</p>}
+      </details>}
       <div className="play-controls">
         <div role="group" aria-label="体验调用方式" className="play-mode">
           <button
@@ -236,7 +272,7 @@ function Session({ project, op, document, hooks }: Props) {
             自动请求
           </label>
         )}
-        <label className="simulate-error">
+        {!live&&<label className="simulate-error">
           <input
             type="checkbox"
             checked={fail}
@@ -244,7 +280,7 @@ function Session({ project, op, document, hooks }: Props) {
             onChange={(e) => setFail(e.target.checked)}
           />{" "}
           模拟错误
-        </label>
+        </label>}
       </div>
       <div className="play-grid">
         <section className="play-inputs" aria-labelledby="play-input-heading">
@@ -314,7 +350,7 @@ function Session({ project, op, document, hooks }: Props) {
               <button
                 type="button"
                 className="primary"
-                disabled={running || changed}
+                disabled={running || changed || (live&&connectionChanged)}
                 onClick={() => void run("request")}
               >
                 {running ? "正在运行…" : "▶ 运行 request"}
@@ -324,14 +360,14 @@ function Session({ project, op, document, hooks }: Props) {
                 <button
                   type="button"
                   className="primary"
-                  disabled={running || changed}
+                  disabled={running || changed || (live&&connectionChanged)}
                   onClick={() => void run("trigger")}
                 >
                   trigger()
                 </button>
                 <button
                   type="button"
-                  disabled={running || changed}
+                  disabled={running || changed || (live&&connectionChanged)}
                   onClick={() => void run("refresh")}
                 >
                   ↻ refresh()
@@ -339,6 +375,7 @@ function Session({ project, op, document, hooks }: Props) {
               </>
             )}
           </div>
+          {live&&running&&<button type="button" onClick={()=>{setEnabled(false);controllers.current.forEach(controller=>controller.abort(new DOMException("已取消请求","AbortError")));}}>取消请求</button>}
           <p className="play-help">
             {mode === "request"
               ? "点击运行，观察请求如何组装。"
@@ -363,23 +400,24 @@ function Session({ project, op, document, hooks }: Props) {
               {currentError
                 ? "ERROR"
                 : count && !running
-                  ? "本地模拟响应"
+                  ? live ? `真实 HTTP ${responseInfo?.status??""} · ${responseInfo?.duration??0} ms` : "本地模拟响应"
                   : "等待调用"}
             </span>
           </div>
           <div className="mock-response" aria-live="polite">
             {currentError ? (
-              <p className="play-error">{currentError}</p>
+              <><p className="play-error">{currentError}</p>{data!==undefined&&<pre tabIndex={0}>{pretty(data)}</pre>}</>
             ) : (
               <pre tabIndex={0}>
                 {running
-                  ? "// 正在执行本地模拟请求…"
+                  ? live?"// 正在等待真实服务响应…":"// 正在执行本地模拟请求…"
                   : count
                     ? pretty(currentData)
                     : "// 运行后在这里查看返回数据"}
               </pre>
             )}
           </div>
+          {live&&responseInfo&&<details className="request-details"><summary>响应信息 · HTTP {responseInfo.status} · {responseInfo.duration} ms</summary><pre tabIndex={0}>{pretty(responseInfo)}</pre></details>}
           <details className="request-details">
             <summary>查看实际组装的请求</summary>
             <pre tabIndex={0}>

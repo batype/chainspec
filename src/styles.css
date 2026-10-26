@@ -2032,3 +2032,17 @@ main.docs-page { max-width:1440px; padding:42px 44px 24px; }
 .workspace-backup button,.workspace-backup .import-file { font-size:10px; padding:6px 10px; color:var(--ink); }
 .workspace-backup .import-file { border:1px solid var(--line); border-radius:6px; background:var(--panel); cursor:pointer; }
 @media(max-width:760px) { .workspace-backup { padding:11px 15px; } .workspace-backup > span { flex-basis:100%; } }
+
+.play-transport { display:flex; gap:8px; margin:20px 24px 0; }
+.play-transport button { font-size:11px; }
+.play-transport button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+.live-settings { margin:18px 24px 0; border:1px solid var(--line); border-radius:8px; padding:14px; font-size:11px; }
+.live-settings summary { cursor:pointer; line-height:1.8; overflow-wrap:anywhere; }
+.live-settings summary code { margin-left:10px; color:var(--muted); }
+.live-settings fieldset { border:0; margin:14px 0; padding:0; display:grid; gap:12px; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.live-settings label { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.live-settings input:not([type="checkbox"]), .live-settings select { width:100%; border:1px solid var(--line); border-radius:6px; background:var(--soft); color:var(--ink); padding:9px; font-size:11px; }
+.live-settings .live-cookie { flex-direction:row; align-items:center; }
+.live-settings p { color:var(--muted); line-height:1.9; font-size:10px; }
+.live-settings p.play-error { color:var(--danger); }
+@media(max-width:600px) { .live-settings { margin:16px; } .live-settings fieldset { grid-template-columns:1fr; } .play-transport { margin:16px; } }

@@ -5,6 +5,7 @@ import { usage, type UsageEnvironment } from "../usage";
 import Code from "./Code";
 import Playground from "./Playground";
 import IntegrationSteps from "./IntegrationSteps";
+import { liveConnection, type LiveConnection } from "../playground-live";
 
 type Props = {
   project: GeneratedProject;
@@ -38,6 +39,10 @@ export default function Workspace({
   onTargetChange,
   output,source,demo,onConfig,
 }: Props) {
+  const [savedConnection,setConnection] = useState<{document:string; baseUrl:string; value:LiveConnection}|null>(null);
+  const defaultConnection = useMemo(()=>liveConnection(project.baseUrl),[documentText,project.baseUrl]);
+  const connection = savedConnection?.document===documentText && savedConnection.baseUrl===project.baseUrl ? savedConnection.value : defaultConnection;
+  const documentSession=useMemo(()=>Math.random().toString(36),[documentText,project.baseUrl]);
   const query = new URLSearchParams(route.split("?")[1] ?? "");
   const [search, setSearch] = useState(""),
     [page, setPage] = useState(0),
@@ -343,11 +348,14 @@ export default function Workspace({
           {view === "setup" ? (op&&<IntegrationSteps project={project} op={op} document={document} target={target} output={output} source={source} demo={demo} ready={ready} onDownload={onDownload} onConfig={onConfig}/>) : view === "playground" ? (
             op && (
               <Playground
-                key={op.id}
+                key={`${documentSession}:${op.id}`}
                 project={project}
                 op={op}
                 document={document}
                 hooks={hooks}
+                demo={demo}
+                connection={connection}
+                onConnection={value=>setConnection({document:documentText,baseUrl:project.baseUrl,value})}
               />
             )
           ) : (
